@@ -1,8 +1,20 @@
 package clients
 
-import "github.com/A13xB0/GoBroke/message"
-
 type Client struct {
-	sending   chan message.Message
-	receiving chan message.Message
+	uuid     string
+	Metadata map[string]any
+}
+
+func New(opts ...clientOptsFunc) *Client {
+	o := defaultOpts()
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return &Client{
+		uuid: o.uuid,
+	}
+}
+
+func (c *Client) GetUUID() string {
+	return c.uuid
 }
