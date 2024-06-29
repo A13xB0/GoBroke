@@ -16,8 +16,9 @@ type Broke struct {
 	receiveQueue chan message.Message
 }
 
-func New(endpoint endpoint.Endpoint) Broke {
-	return Broke{
+// New GoBroke instance
+func New(endpoint endpoint.Endpoint) *Broke {
+	return &Broke{
 		endpoint:     endpoint,
 		logic:        make(map[string]logic.Logic),
 		clients:      make(map[string]*clients.Client),
@@ -26,14 +27,16 @@ func New(endpoint endpoint.Endpoint) Broke {
 	}
 }
 
-func (broke *Broke) AddLogic(name string, logic logic.Logic) error {
-	if _, ok := broke.logic[name]; ok {
+// AddLogic to the GoBroke instance
+func (broke *Broke) AddLogic(logic logic.Logic) error {
+	if _, ok := broke.logic[logic.Name()]; ok {
 		return ErrorLogicAlreadyExists
 	}
-	broke.logic[name] = logic
+	broke.logic[logic.Name()] = logic
 	return nil
 }
 
+// RemoveLogic from the GoBroke instance
 func (broke *Broke) RemoveLogic(name string) error {
 	if _, ok := broke.logic[name]; ok {
 		delete(broke.logic, name)
@@ -41,7 +44,8 @@ func (broke *Broke) RemoveLogic(name string) error {
 	return nil
 }
 
-func (broke *Broke) registerClient(client *clients.Client) error {
+// registerClient in the GoBroke instance. This should be run from the endpoint.
+func (broke *Broke) RegisterClient(client *clients.Client) error {
 	if _, ok := broke.clients[client.GetUUID()]; ok {
 		return ErrorClientAlreadyExists
 	}
@@ -49,7 +53,8 @@ func (broke *Broke) registerClient(client *clients.Client) error {
 	return nil
 }
 
-func (broke *Broke) removeClient(client *clients.Client) error {
+// RemoveClient in the GoBroke instance (the equivalent of kicking someone)
+func (broke *Broke) RemoveClient(client *clients.Client) error {
 	if _, ok := broke.clients[client.GetUUID()]; !ok {
 
 		return ErrorClientDoesNotExist
@@ -62,8 +67,28 @@ func (broke *Broke) removeClient(client *clients.Client) error {
 	return nil
 }
 
+// GetClient by using the client uuid.
+func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
+	if client, ok := broke.clients[uuid]; ok {
+		return client, nil
+	}
+	return nil, ErrorClientDoesNotExist
+}
+
+// GetAllClients gets all clients in a slice.
+func (broke *Broke) GetAllClients() []*clients.Client {
+	var clients []*clients.Client
+	for _, value := range broke.clients {
+		clients = append(clients, value)
+	}
+	return clients
+}
+
 // SendMessage will put a message to be processed by GoBroke, this can be used to send a message to logic or clients
 func (broke *Broke) SendMessage(message message.Message) {
+	if message.FromClient != nil {
+		message.FromClient.SetLastMessageNow()
+	}
 	broke.receiveQueue <- message
 }
 
@@ -84,6 +109,7 @@ func (broke *Broke) Start() error {
 				logicFn.RunLogic(message) //todo: handle errors
 			case logic.DISPATCHED:
 				go logicFn.RunLogic(message) //todo: handle errors
+			case logic.PASSIVE:
 			}
 		}
 	}

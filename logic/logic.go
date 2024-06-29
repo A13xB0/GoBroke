@@ -12,6 +12,7 @@ type NewLogic func(*GoBroke.Broke) error
 const (
 	DISPATCHED LogicType = iota
 	WORKER
+	PASSIVE
 )
 
 type Logic interface {
