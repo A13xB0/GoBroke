@@ -1,6 +1,7 @@
 package inactivitymonitor
 
 import (
+	"context"
 	"fmt"
 	"github.com/A13xB0/GoBroke"
 	"github.com/A13xB0/GoBroke/logic"
@@ -12,10 +13,11 @@ type inactivityMonitor struct {
 	name              string
 	lType             logic.LogicType
 	inactivityMinutes int
+	ctx               context.Context
 	*GoBroke.Broke
 }
 
-func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) logic.Logic {
+func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Context) logic.Logic {
 	worker := inactivityMonitor{
 		name:              "inactivitymonitor",
 		lType:             logic.PASSIVE,
@@ -28,12 +30,16 @@ func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) logic.Logic {
 
 func (w *inactivityMonitor) startWorker() {
 	for {
-		time.Sleep(10 * time.Second)
-		clients := w.GetAllClients()
-		for _, client := range clients {
-			delta := time.Now().Sub(client.GetLastMessage())
-			if delta.Minutes() > 15 {
-				_ = w.RemoveClient(client)
+		select {
+		case <-w.ctx.Done():
+		default:
+			time.Sleep(10 * time.Second)
+			clients := w.GetAllClients()
+			for _, client := range clients {
+				delta := time.Now().Sub(client.GetLastMessage())
+				if delta.Minutes() > 15 {
+					_ = w.RemoveClient(client)
+				}
 			}
 		}
 	}

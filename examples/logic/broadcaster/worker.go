@@ -2,6 +2,7 @@
 package broadcaster
 
 import (
+	"context"
 	"github.com/A13xB0/GoBroke"
 	"github.com/A13xB0/GoBroke/logic"
 	"github.com/A13xB0/GoBroke/message"
@@ -11,23 +12,30 @@ type broadcasterWorker struct {
 	name    string
 	lType   logic.LogicType
 	receive chan message.Message
+	ctx     context.Context
 	*GoBroke.Broke
 }
 
-func CreateWorker(broke *GoBroke.Broke) logic.Logic {
+func CreateWorker(broke *GoBroke.Broke, ctx context.Context) logic.Logic {
 	worker := broadcasterWorker{
 		name:    "broadcaster",
 		lType:   logic.WORKER,
 		receive: make(chan message.Message),
 		Broke:   broke,
+		ctx:     ctx,
 	}
 	worker.startWorker()
 	return &worker
 }
 
 func (w *broadcasterWorker) startWorker() {
-	for msg := range w.receive {
-		w.work(msg)
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		case msg := <-w.receive:
+			w.work(msg)
+		}
 	}
 }
 

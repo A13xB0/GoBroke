@@ -1,6 +1,7 @@
 package GoBroke
 
 import (
+	"context"
 	"errors"
 	"github.com/A13xB0/GoBroke/clients"
 	"github.com/A13xB0/GoBroke/endpoint"
@@ -14,16 +15,25 @@ type Broke struct {
 	clients      map[string]*clients.Client
 	sendQueue    chan message.Message
 	receiveQueue chan message.Message
+	ctx          context.Context
 }
 
 // New GoBroke instance
-func New(endpoint endpoint.Endpoint) *Broke {
+func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) *Broke {
+
+	//Get options
+	o := defaultOpts()
+	for _, fn := range opts {
+		fn(&o)
+	}
+
 	return &Broke{
 		endpoint:     endpoint,
 		logic:        make(map[string]logic.Logic),
 		clients:      make(map[string]*clients.Client),
-		receiveQueue: make(chan message.Message),
-		sendQueue:    make(chan message.Message),
+		receiveQueue: make(chan message.Message, o.channelSize),
+		sendQueue:    make(chan message.Message, o.channelSize),
+		ctx:          o.ctx,
 	}
 }
 
@@ -44,7 +54,7 @@ func (broke *Broke) RemoveLogic(name string) error {
 	return nil
 }
 
-// registerClient in the GoBroke instance. This should be run from the endpoint.
+// RegisterClient in the GoBroke instance. This should be run from the endpoint.
 func (broke *Broke) RegisterClient(client *clients.Client) error {
 	if _, ok := broke.clients[client.GetUUID()]; ok {
 		return ErrorClientAlreadyExists
@@ -98,20 +108,24 @@ func (broke *Broke) SendMessageQuickly(message message.Message) {
 }
 
 // Start GoBroke
-func (broke *Broke) Start() error {
-	for message := range broke.receiveQueue {
-		if len(message.ToClient) != 0 {
-			broke.sendQueue <- message
-		}
-		for _, logicFn := range broke.logic {
-			switch logicFn.Type() {
-			case logic.WORKER:
-				logicFn.RunLogic(message) //todo: handle errors
-			case logic.DISPATCHED:
-				go logicFn.RunLogic(message) //todo: handle errors
-			case logic.PASSIVE:
+func (broke *Broke) Start() {
+	for {
+		select {
+		case <-broke.ctx.Done():
+			return
+		case message := <-broke.receiveQueue:
+			if len(message.ToClient) != 0 {
+				broke.sendQueue <- message
+			}
+			for _, logicFn := range broke.logic {
+				switch logicFn.Type() {
+				case logic.WORKER:
+					logicFn.RunLogic(message) //todo: handle errors
+				case logic.DISPATCHED:
+					go logicFn.RunLogic(message) //todo: handle errors
+				case logic.PASSIVE:
+				}
 			}
 		}
 	}
-	return nil
 }

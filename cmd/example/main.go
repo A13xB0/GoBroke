@@ -1,22 +1,22 @@
 package main
 
 import (
+	"context"
 	"github.com/A13xB0/GoBroke"
 	"github.com/A13xB0/GoBroke/examples/logic/broadcaster"
+	"github.com/A13xB0/GoBroke/examples/logic/inactivitymonitor"
 )
 
 func main() {
-	gb := GoBroke.New(nil)
+	ctx := context.Background()
+	gb := GoBroke.New(nil, GoBroke.WithContext(ctx))
 
 	//Add Logic
 	broadcasterLogic := broadcaster.CreateDispatched(gb)
-	err := gb.AddLogic(broadcasterLogic)
-	if err != nil {
-		panic(err)
-	}
+	_ = gb.AddLogic(broadcasterLogic)
+	inactivityMonitor := inactivitymonitor.CreateWorker(gb, 15, ctx)
+	_ = gb.AddLogic(inactivityMonitor)
 
-	err = gb.Start()
-	if err != nil {
-		panic(err)
-	}
+	//Start GoBroke
+	gb.Start()
 }
