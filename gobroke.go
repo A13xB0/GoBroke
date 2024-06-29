@@ -87,11 +87,11 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 
 // GetAllClients gets all clients in a slice.
 func (broke *Broke) GetAllClients() []*clients.Client {
-	var clients []*clients.Client
+	var cl []*clients.Client
 	for _, value := range broke.clients {
-		clients = append(clients, value)
+		cl = append(cl, value)
 	}
-	return clients
+	return cl
 }
 
 // SendMessage will put a message to be processed by GoBroke, this can be used to send a message to logic or clients
@@ -112,17 +112,19 @@ func (broke *Broke) Start() {
 	for {
 		select {
 		case <-broke.ctx.Done():
+			close(broke.receiveQueue)
+			close(broke.sendQueue)
 			return
-		case message := <-broke.receiveQueue:
-			if len(message.ToClient) != 0 {
-				broke.sendQueue <- message
+		case msg := <-broke.receiveQueue:
+			if len(msg.ToClient) != 0 {
+				broke.sendQueue <- msg
 			}
 			for _, logicFn := range broke.logic {
 				switch logicFn.Type() {
 				case logic.WORKER:
-					logicFn.RunLogic(message) //todo: handle errors
+					logicFn.RunLogic(msg) //todo: handle errors
 				case logic.DISPATCHED:
-					go logicFn.RunLogic(message) //todo: handle errors
+					go logicFn.RunLogic(msg) //todo: handle errors
 				case logic.PASSIVE:
 				}
 			}

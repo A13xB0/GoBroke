@@ -23,6 +23,7 @@ func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Conte
 		lType:             logic.PASSIVE,
 		Broke:             broke,
 		inactivityMinutes: inactivityMinutes,
+		ctx:               ctx,
 	}
 	worker.startWorker()
 	return &worker

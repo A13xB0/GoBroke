@@ -1,2 +1,4 @@
 # GoBroke
-GoBroke is an internal routing package for processing messages to different modules within your package.
+GoBroke (this is not a broker) is a very basic internal routing package for processing messages to different logic modules and clients within your project. This is based off of a game server project I was working on which got fundamentally messy and was badly architected. This has been stripped back to the fundamentals for a cleaner approach of a message router (with the ability to add logic in a modular fashion). The user of this project must define their own endpoint (HTTP, UDP, TCP, GRPC, etc) which satisfies the endpoint interface.
+
+**This is a more of a for me project than a for you project**
