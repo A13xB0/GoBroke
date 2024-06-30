@@ -7,12 +7,14 @@ import (
 	"github.com/A13xB0/GoBroke/endpoint"
 	"github.com/A13xB0/GoBroke/logic"
 	"github.com/A13xB0/GoBroke/message"
+	"sync"
 )
 
 type Broke struct {
 	endpoint     endpoint.Endpoint
 	logic        map[string]logic.Logic
 	clients      map[string]*clients.Client
+	clientsMutex sync.RWMutex
 	sendQueue    chan message.Message
 	receiveQueue chan message.Message
 	ctx          context.Context
@@ -27,7 +29,7 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) *Broke {
 		fn(&o)
 	}
 
-	return &Broke{
+	gb := &Broke{
 		endpoint:     endpoint,
 		logic:        make(map[string]logic.Logic),
 		clients:      make(map[string]*clients.Client),
@@ -35,6 +37,10 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) *Broke {
 		sendQueue:    make(chan message.Message, o.channelSize),
 		ctx:          o.ctx,
 	}
+	// todo: Handle Errors
+	_ = endpoint.Sender(gb.sendQueue)
+	_ = endpoint.Receiver(gb.receiveQueue)
+	return gb
 }
 
 // AddLogic to the GoBroke instance
@@ -56,29 +62,42 @@ func (broke *Broke) RemoveLogic(name string) error {
 
 // RegisterClient in the GoBroke instance. This should be run from the endpoint.
 func (broke *Broke) RegisterClient(client *clients.Client) error {
-	if _, ok := broke.clients[client.GetUUID()]; ok {
+	broke.clientsMutex.RLock()
+	_, ok := broke.clients[client.GetUUID()]
+	broke.clientsMutex.RUnlock()
+	if ok {
 		return ErrorClientAlreadyExists
 	}
+
+	broke.clientsMutex.Lock()
 	broke.clients[client.GetUUID()] = client
+	broke.clientsMutex.Unlock()
 	return nil
 }
 
 // RemoveClient in the GoBroke instance (the equivalent of kicking someone)
 func (broke *Broke) RemoveClient(client *clients.Client) error {
-	if _, ok := broke.clients[client.GetUUID()]; !ok {
-
+	broke.clientsMutex.RLock()
+	_, ok := broke.clients[client.GetUUID()]
+	broke.clientsMutex.RUnlock()
+	if !ok {
 		return ErrorClientDoesNotExist
 	}
 	err := broke.endpoint.Disconnect(client)
 	if err != nil {
 		return errors.Join(ErrorClientCouldNotBeDisconnected, err)
 	}
+
+	broke.clientsMutex.Lock()
 	delete(broke.clients, client.GetUUID())
+	broke.clientsMutex.Unlock()
 	return nil
 }
 
 // GetClient by using the client uuid.
 func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
+	broke.clientsMutex.RLock()
+	defer broke.clientsMutex.RUnlock()
 	if client, ok := broke.clients[uuid]; ok {
 		return client, nil
 	}
@@ -87,6 +106,8 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 
 // GetAllClients gets all clients in a slice.
 func (broke *Broke) GetAllClients() []*clients.Client {
+	broke.clientsMutex.RLock()
+	defer broke.clientsMutex.RUnlock()
 	var cl []*clients.Client
 	for _, value := range broke.clients {
 		cl = append(cl, value)
