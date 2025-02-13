@@ -3,25 +3,28 @@ package GoBroke
 import (
 	"context"
 	"errors"
+	"sync"
+
+	brokeerrors "github.com/A13xB0/GoBroke/broke-errors"
 	"github.com/A13xB0/GoBroke/clients"
 	"github.com/A13xB0/GoBroke/endpoint"
-	"github.com/A13xB0/GoBroke/logic"
-	"github.com/A13xB0/GoBroke/message"
-	"sync"
+	"github.com/A13xB0/GoBroke/types"
 )
+
+type NewLogic func(*Broke) error
 
 type Broke struct {
 	endpoint     endpoint.Endpoint
-	logic        map[string]logic.Logic
+	logic        map[string]types.Logic
 	clients      map[string]*clients.Client
 	clientsMutex sync.RWMutex
-	sendQueue    chan message.Message
-	receiveQueue chan message.Message
+	sendQueue    chan types.Message
+	receiveQueue chan types.Message
 	ctx          context.Context
 }
 
 // New GoBroke instance
-func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) *Broke {
+func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 
 	//Get options
 	o := defaultOpts()
@@ -31,22 +34,29 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) *Broke {
 
 	gb := &Broke{
 		endpoint:     endpoint,
-		logic:        make(map[string]logic.Logic),
+		logic:        make(map[string]types.Logic),
 		clients:      make(map[string]*clients.Client),
-		receiveQueue: make(chan message.Message, o.channelSize),
-		sendQueue:    make(chan message.Message, o.channelSize),
+		receiveQueue: make(chan types.Message, o.channelSize),
+		sendQueue:    make(chan types.Message, o.channelSize),
 		ctx:          o.ctx,
 	}
 	// todo: Handle Errors
-	_ = endpoint.Sender(gb.sendQueue)
-	_ = endpoint.Receiver(gb.receiveQueue)
-	return gb
+	if endpoint == nil {
+		return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, brokeerrors.ErrorNoEndpointProvided)
+	}
+	if err := endpoint.Sender(gb.sendQueue); err != nil {
+		return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
+	}
+	if err := endpoint.Receiver(gb.receiveQueue); err != nil {
+		return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
+	}
+	return gb, nil
 }
 
 // AddLogic to the GoBroke instance
-func (broke *Broke) AddLogic(logic logic.Logic) error {
+func (broke *Broke) AddLogic(logic types.Logic) error {
 	if _, ok := broke.logic[logic.Name()]; ok {
-		return ErrorLogicAlreadyExists
+		return brokeerrors.ErrorLogicAlreadyExists
 	}
 	broke.logic[logic.Name()] = logic
 	return nil
@@ -66,7 +76,7 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 	_, ok := broke.clients[client.GetUUID()]
 	broke.clientsMutex.RUnlock()
 	if ok {
-		return ErrorClientAlreadyExists
+		return brokeerrors.ErrorClientAlreadyExists
 	}
 
 	broke.clientsMutex.Lock()
@@ -81,11 +91,11 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 	_, ok := broke.clients[client.GetUUID()]
 	broke.clientsMutex.RUnlock()
 	if !ok {
-		return ErrorClientDoesNotExist
+		return brokeerrors.ErrorClientDoesNotExist
 	}
 	err := broke.endpoint.Disconnect(client)
 	if err != nil {
-		return errors.Join(ErrorClientCouldNotBeDisconnected, err)
+		return errors.Join(brokeerrors.ErrorClientCouldNotBeDisconnected, err)
 	}
 
 	broke.clientsMutex.Lock()
@@ -101,7 +111,7 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 	if client, ok := broke.clients[uuid]; ok {
 		return client, nil
 	}
-	return nil, ErrorClientDoesNotExist
+	return nil, brokeerrors.ErrorClientDoesNotExist
 }
 
 // GetAllClients gets all clients in a slice.
@@ -116,7 +126,7 @@ func (broke *Broke) GetAllClients() []*clients.Client {
 }
 
 // SendMessage will put a message to be processed by GoBroke, this can be used to send a message to logic or clients
-func (broke *Broke) SendMessage(message message.Message) {
+func (broke *Broke) SendMessage(message types.Message) {
 	if message.FromClient != nil {
 		message.FromClient.SetLastMessageNow()
 	}
@@ -124,7 +134,7 @@ func (broke *Broke) SendMessage(message message.Message) {
 }
 
 // SendMessageQuickly will put a message to be processed by the endpoint directly, *this can be used to send a message to clients only*
-func (broke *Broke) SendMessageQuickly(message message.Message) {
+func (broke *Broke) SendMessageQuickly(message types.Message) {
 	broke.sendQueue <- message
 }
 
@@ -142,11 +152,11 @@ func (broke *Broke) Start() {
 			}
 			for _, logicFn := range broke.logic {
 				switch logicFn.Type() {
-				case logic.WORKER:
+				case types.WORKER:
 					logicFn.RunLogic(msg) //todo: handle errors
-				case logic.DISPATCHED:
+				case types.DISPATCHED:
 					go logicFn.RunLogic(msg) //todo: handle errors
-				case logic.PASSIVE:
+				case types.PASSIVE:
 				}
 			}
 		}

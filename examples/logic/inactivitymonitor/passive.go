@@ -3,24 +3,24 @@ package inactivitymonitor
 import (
 	"context"
 	"fmt"
-	"github.com/A13xB0/GoBroke"
-	"github.com/A13xB0/GoBroke/logic"
-	"github.com/A13xB0/GoBroke/message"
 	"time"
+
+	"github.com/A13xB0/GoBroke"
+	"github.com/A13xB0/GoBroke/types"
 )
 
 type inactivityMonitor struct {
 	name              string
-	lType             logic.LogicType
+	lType             types.LogicType
 	inactivityMinutes int
 	ctx               context.Context
 	*GoBroke.Broke
 }
 
-func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Context) logic.Logic {
+func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Context) types.Logic {
 	worker := inactivityMonitor{
 		name:              "inactivitymonitor",
-		lType:             logic.PASSIVE,
+		lType:             types.PASSIVE,
 		Broke:             broke,
 		inactivityMinutes: inactivityMinutes,
 		ctx:               ctx,
@@ -46,11 +46,11 @@ func (w *inactivityMonitor) startWorker() {
 	}
 }
 
-func (w *inactivityMonitor) RunLogic(message message.Message) error {
+func (w *inactivityMonitor) RunLogic(message types.Message) error {
 	return fmt.Errorf("This logic does not support invocation")
 }
 
-func (w *inactivityMonitor) Type() logic.LogicType {
+func (w *inactivityMonitor) Type() types.LogicType {
 	return w.lType
 }
 

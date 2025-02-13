@@ -3,24 +3,25 @@ package broadcaster
 
 import (
 	"context"
+
 	"github.com/A13xB0/GoBroke"
-	"github.com/A13xB0/GoBroke/logic"
-	"github.com/A13xB0/GoBroke/message"
+	"github.com/A13xB0/GoBroke/clients"
+	"github.com/A13xB0/GoBroke/types"
 )
 
 type broadcasterWorker struct {
 	name    string
-	lType   logic.LogicType
-	receive chan message.Message
+	lType   types.LogicType
+	receive chan types.Message
 	ctx     context.Context
 	*GoBroke.Broke
 }
 
-func CreateWorker(broke *GoBroke.Broke, ctx context.Context) logic.Logic {
+func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
 	worker := broadcasterWorker{
 		name:    "broadcaster",
-		lType:   logic.WORKER,
-		receive: make(chan message.Message),
+		lType:   types.WORKER,
+		receive: make(chan types.Message),
 		Broke:   broke,
 		ctx:     ctx,
 	}
@@ -39,21 +40,26 @@ func (w *broadcasterWorker) startWorker() {
 	}
 }
 
-func (w *broadcasterWorker) work(msg message.Message) {
-	clients := w.GetAllClients()
-	for _, client := range clients {
-		sMsg := message.NewSimpleLogicMessage(w, client, nil, msg.MessageRaw)
-		w.SendMessage(sMsg)
-	}
-
+func (w *broadcasterWorker) work(msg types.Message) {
+	go func() {
+		allClients := w.GetAllClients()
+		for _, client := range allClients {
+			sMsg := types.Message{
+				ToClient:   []*clients.Client{client},
+				FromLogic:  w,
+				MessageRaw: msg.MessageRaw,
+			}
+			w.SendMessage(sMsg)
+		}
+	}()
 }
 
-func (w *broadcasterWorker) RunLogic(message message.Message) error {
+func (w *broadcasterWorker) RunLogic(message types.Message) error {
 	w.receive <- message
 	return nil
 }
 
-func (w *broadcasterWorker) Type() logic.LogicType {
+func (w *broadcasterWorker) Type() types.LogicType {
 	return w.lType
 }
 

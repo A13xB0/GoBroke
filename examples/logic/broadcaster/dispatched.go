@@ -2,33 +2,36 @@ package broadcaster
 
 import (
 	"github.com/A13xB0/GoBroke"
-	"github.com/A13xB0/GoBroke/logic"
-	"github.com/A13xB0/GoBroke/message"
+	"github.com/A13xB0/GoBroke/types"
 )
 
 type broadcasterDispatched struct {
 	name  string
-	lType logic.LogicType
+	lType types.LogicType
 	*GoBroke.Broke
 }
 
-func CreateDispatched(broke *GoBroke.Broke) logic.Logic {
+func CreateDispatched(broke *GoBroke.Broke) types.Logic {
 	worker := broadcasterDispatched{
 		name:  "broadcaster",
-		lType: logic.DISPATCHED,
+		lType: types.DISPATCHED,
 		Broke: broke,
 	}
 	return &worker
 }
 
-func (w *broadcasterDispatched) RunLogic(msg message.Message) error {
+func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
 	clients := w.GetAllClients()
-	sMsg := message.NewLogicMessage(w, clients, nil, msg.MessageRaw)
+	sMsg := types.Message{
+		ToClient:   clients,
+		FromLogic:  w,
+		MessageRaw: msg.MessageRaw,
+	}
 	w.SendMessage(sMsg)
 	return nil
 }
 
-func (w *broadcasterDispatched) Type() logic.LogicType {
+func (w *broadcasterDispatched) Type() types.LogicType {
 	return w.lType
 }
 

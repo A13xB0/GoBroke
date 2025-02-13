@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+
 	"github.com/A13xB0/GoBroke"
 	"github.com/A13xB0/GoBroke/examples/logic/broadcaster"
 	"github.com/A13xB0/GoBroke/examples/logic/inactivitymonitor"
@@ -9,7 +10,10 @@ import (
 
 func main() {
 	ctx := context.Background()
-	gb := GoBroke.New(nil, GoBroke.WithContext(ctx))
+	gb, err := GoBroke.New(nil, GoBroke.WithContext(ctx))
+	if err != nil {
+		panic(err)
+	}
 
 	//Add Logic
 	broadcasterLogic := broadcaster.CreateDispatched(gb)
