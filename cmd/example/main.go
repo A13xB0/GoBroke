@@ -18,7 +18,7 @@ func main() {
 	//Add Logic
 	broadcasterLogic := broadcaster.CreateDispatched(gb)
 	_ = gb.AddLogic(broadcasterLogic)
-	inactivityMonitor := inactivitymonitor.CreateWorker(gb, 15, ctx)
+	inactivityMonitor := inactivitymonitor.CreateWorker(gb, 15)
 	_ = gb.AddLogic(inactivityMonitor)
 
 	//Start GoBroke

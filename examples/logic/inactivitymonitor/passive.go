@@ -1,7 +1,6 @@
 package inactivitymonitor
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -10,20 +9,14 @@ import (
 )
 
 type inactivityMonitor struct {
-	name              string
-	lType             types.LogicType
+	GoBroke.LogicBase
 	inactivityMinutes int
-	ctx               context.Context
-	*GoBroke.Broke
 }
 
-func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Context) types.Logic {
+func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) types.Logic {
 	worker := inactivityMonitor{
-		name:              "inactivitymonitor",
-		lType:             types.PASSIVE,
-		Broke:             broke,
+		LogicBase:         GoBroke.NewLogicBase("inactivitymonitor", types.PASSIVE, broke),
 		inactivityMinutes: inactivityMinutes,
-		ctx:               ctx,
 	}
 	worker.startWorker()
 	return &worker
@@ -32,7 +25,7 @@ func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int, ctx context.Conte
 func (w *inactivityMonitor) startWorker() {
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-w.Ctx.Done():
 		default:
 			time.Sleep(10 * time.Second)
 			clients := w.GetAllClients()
@@ -47,13 +40,5 @@ func (w *inactivityMonitor) startWorker() {
 }
 
 func (w *inactivityMonitor) RunLogic(message types.Message) error {
-	return fmt.Errorf("This logic does not support invocation")
-}
-
-func (w *inactivityMonitor) Type() types.LogicType {
-	return w.lType
-}
-
-func (w *inactivityMonitor) Name() string {
-	return w.name
+	return fmt.Errorf("this logic does not support invocation")
 }

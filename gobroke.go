@@ -11,8 +11,6 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
-type NewLogic func(*Broke) error
-
 type Broke struct {
 	endpoint     endpoint.Endpoint
 	logic        map[string]types.Logic

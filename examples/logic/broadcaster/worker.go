@@ -10,20 +10,14 @@ import (
 )
 
 type broadcasterWorker struct {
-	name    string
-	lType   types.LogicType
+	GoBroke.LogicBase
 	receive chan types.Message
-	ctx     context.Context
-	*GoBroke.Broke
 }
 
 func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
 	worker := broadcasterWorker{
-		name:    "broadcaster",
-		lType:   types.WORKER,
-		receive: make(chan types.Message),
-		Broke:   broke,
-		ctx:     ctx,
+		LogicBase: GoBroke.NewLogicBase("broadcaster", types.WORKER, broke),
+		receive:   make(chan types.Message),
 	}
 	worker.startWorker()
 	return &worker
@@ -32,7 +26,7 @@ func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
 func (w *broadcasterWorker) startWorker() {
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-w.Ctx.Done():
 			return
 		case msg := <-w.receive:
 			w.work(msg)
@@ -57,12 +51,4 @@ func (w *broadcasterWorker) work(msg types.Message) {
 func (w *broadcasterWorker) RunLogic(message types.Message) error {
 	w.receive <- message
 	return nil
-}
-
-func (w *broadcasterWorker) Type() types.LogicType {
-	return w.lType
-}
-
-func (w *broadcasterWorker) Name() string {
-	return w.name
 }
