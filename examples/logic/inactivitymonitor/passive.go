@@ -43,7 +43,7 @@ func (w *inactivityMonitor) startWorker() {
 			time.Sleep(10 * time.Second)
 			clients := w.GetAllClients()
 			for _, client := range clients {
-				delta := time.Now().Sub(client.GetLastMessage())
+				delta := time.Since(client.GetLastMessage())
 				if delta.Minutes() > 15 {
 					_ = w.RemoveClient(client)
 				}
