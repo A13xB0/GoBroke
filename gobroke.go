@@ -5,9 +5,9 @@ import (
 	"errors"
 	"sync"
 
-	brokeerrors "github.com/A13xB0/GoBroke/broke-errors"
 	"github.com/A13xB0/GoBroke/clients"
 	"github.com/A13xB0/GoBroke/endpoint"
+	brokeerrors "github.com/A13xB0/GoBroke/errors"
 	"github.com/A13xB0/GoBroke/types"
 )
 
