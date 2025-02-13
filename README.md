@@ -19,6 +19,7 @@ GoBroke acts as a message router that:
 3. **Client**: Represents connected clients and manages their state
 4. **Logic**: Interface for implementing business logic modules
 5. **Message**: Structure for passing data between components
+6. **LogicBase**: Base implementation providing common logic functionality
 
 ### Message Flow
 
@@ -30,6 +31,36 @@ Messages can flow:
 - From clients to logic modules
 - From logic modules to specific clients
 - From logic modules to all clients (broadcast)
+
+## Logic Implementation
+
+All logic modules in GoBroke extend the `LogicBase` struct, which provides common functionality:
+
+```go
+type LogicBase struct {
+    name      string
+    logicType types.LogicType
+    Ctx       context.Context
+    *Broke
+}
+```
+
+To create a new logic module, embed `LogicBase` and initialize it using `NewLogicBase`:
+
+```go
+type customLogic struct {
+    GoBroke.LogicBase
+    // Additional fields specific to your logic
+}
+
+func CreateCustomLogic(broke *GoBroke.Broke) types.Logic {
+    logic := customLogic{
+        LogicBase: GoBroke.NewLogicBase("customlogic", types.DISPATCHED, broke),
+        // Initialize additional fields
+    }
+    return &logic
+}
+```
 
 ## Logic Types
 
@@ -44,9 +75,14 @@ GoBroke supports three types of logic modules:
 
 ```go
 type broadcasterDispatched struct {
-    name  string
-    lType types.LogicType
-    *GoBroke.Broke
+    GoBroke.LogicBase
+}
+
+func CreateDispatched(broke *GoBroke.Broke) types.Logic {
+    worker := broadcasterDispatched{
+        LogicBase: GoBroke.NewLogicBase("broadcaster", types.DISPATCHED, broke),
+    }
+    return &worker
 }
 
 func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
@@ -70,28 +106,33 @@ func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
 
 ```go
 type broadcasterWorker struct {
-    name    string
-    lType   types.LogicType
+    GoBroke.LogicBase
     receive chan types.Message
-    ctx     context.Context
-    *GoBroke.Broke
+}
+
+func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
+    worker := broadcasterWorker{
+        LogicBase: GoBroke.NewLogicBase("broadcaster", types.WORKER, broke),
+        receive:   make(chan types.Message),
+    }
+    worker.startWorker()
+    return &worker
+}
+
+func (w *broadcasterWorker) startWorker() {
+    for {
+        select {
+        case <-w.Ctx.Done():
+            return
+        case msg := <-w.receive:
+            w.work(msg)
+        }
+    }
 }
 
 func (w *broadcasterWorker) RunLogic(message types.Message) error {
     w.receive <- message
     return nil
-}
-
-func (w *broadcasterWorker) work(msg types.Message) {
-    clients := w.GetAllClients()
-    for _, client := range clients {
-        sMsg := types.Message{
-            ToClient:   []*clients.Client{client},
-            FromLogic:  w,
-            MessageRaw: msg.MessageRaw,
-        }
-        w.SendMessage(sMsg)
-    }
 }
 ```
 
@@ -104,17 +145,23 @@ func (w *broadcasterWorker) work(msg types.Message) {
 
 ```go
 type inactivityMonitor struct {
-    name              string
-    lType             types.LogicType
+    GoBroke.LogicBase
     inactivityMinutes int
-    ctx               context.Context
-    *GoBroke.Broke
+}
+
+func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) types.Logic {
+    worker := inactivityMonitor{
+        LogicBase:         GoBroke.NewLogicBase("inactivitymonitor", types.PASSIVE, broke),
+        inactivityMinutes: inactivityMinutes,
+    }
+    worker.startWorker()
+    return &worker
 }
 
 func (w *inactivityMonitor) startWorker() {
     for {
         select {
-        case <-w.ctx.Done():
+        case <-w.Ctx.Done():
             return
         default:
             time.Sleep(10 * time.Second)
@@ -127,6 +174,10 @@ func (w *inactivityMonitor) startWorker() {
             }
         }
     }
+}
+
+func (w *inactivityMonitor) RunLogic(message types.Message) error {
+    return fmt.Errorf("this logic does not support invocation")
 }
 ```
 
@@ -224,14 +275,19 @@ Messages in GoBroke contain:
    - Use the provided error types from broke-errors package
 
 3. **Context Usage**:
-   - Pass context through the application for proper cancellation
-   - Use context timeouts where appropriate
+   - Use the context provided by LogicBase for cancellation
+   - Add timeouts where appropriate
    - Handle context cancellation in worker loops
 
 4. **Message Processing**:
    - Keep message processing logic concise
    - Use appropriate goroutines for concurrent processing
    - Consider message ordering requirements when choosing logic types
+
+5. **LogicBase Usage**:
+   - Extend LogicBase for all logic implementations
+   - Use the provided context for cancellation handling
+   - Access common functionality through LogicBase methods
 
 ## License
 
