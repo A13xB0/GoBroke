@@ -1,3 +1,6 @@
+// Package GoBroke provides a flexible message broker implementation for handling
+// client-to-client and client-to-logic communication patterns. It supports
+// different types of message routing, client management, and custom logic handlers.
 package GoBroke
 
 import (
@@ -11,6 +14,8 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
+// Broke represents a message broker instance that manages client connections,
+// message routing, and custom logic handlers.
 type Broke struct {
 	endpoint     endpoint.Endpoint
 	logic        map[string]types.Logic
@@ -21,7 +26,8 @@ type Broke struct {
 	ctx          context.Context
 }
 
-// New GoBroke instance
+// New creates a new GoBroke instance with the specified endpoint and optional configuration.
+// It returns an error if the endpoint is nil or if there are issues setting up message queues.
 func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 
 	//Get options
@@ -51,7 +57,8 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 	return gb, nil
 }
 
-// AddLogic to the GoBroke instance
+// AddLogic adds a new logic handler to the GoBroke instance.
+// It returns an error if a logic handler with the same name already exists.
 func (broke *Broke) AddLogic(logic types.Logic) error {
 	if _, ok := broke.logic[logic.Name()]; ok {
 		return brokeerrors.ErrorLogicAlreadyExists
@@ -60,7 +67,8 @@ func (broke *Broke) AddLogic(logic types.Logic) error {
 	return nil
 }
 
-// RemoveLogic from the GoBroke instance
+// RemoveLogic removes a logic handler from the GoBroke instance by its name.
+// It returns nil even if the logic handler doesn't exist.
 func (broke *Broke) RemoveLogic(name string) error {
 	if _, ok := broke.logic[name]; ok {
 		delete(broke.logic, name)
@@ -68,7 +76,9 @@ func (broke *Broke) RemoveLogic(name string) error {
 	return nil
 }
 
-// RegisterClient in the GoBroke instance. This should be run from the endpoint.
+// RegisterClient registers a new client in the GoBroke instance.
+// This method should be called from the endpoint implementation.
+// It returns an error if the client is already registered.
 func (broke *Broke) RegisterClient(client *clients.Client) error {
 	broke.clientsMutex.RLock()
 	_, ok := broke.clients[client.GetUUID()]
@@ -83,7 +93,9 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 	return nil
 }
 
-// RemoveClient in the GoBroke instance (the equivalent of kicking someone)
+// RemoveClient removes a client from the GoBroke instance and disconnects them
+// from the endpoint. It returns an error if the client doesn't exist or if
+// the disconnection fails.
 func (broke *Broke) RemoveClient(client *clients.Client) error {
 	broke.clientsMutex.RLock()
 	_, ok := broke.clients[client.GetUUID()]
@@ -102,7 +114,8 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 	return nil
 }
 
-// GetClient by using the client uuid.
+// GetClient retrieves a client by their UUID.
+// It returns the client instance and nil if found, or nil and an error if not found.
 func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 	broke.clientsMutex.RLock()
 	defer broke.clientsMutex.RUnlock()
@@ -112,7 +125,7 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 	return nil, brokeerrors.ErrorClientDoesNotExist
 }
 
-// GetAllClients gets all clients in a slice.
+// GetAllClients returns a slice containing all currently connected clients.
 func (broke *Broke) GetAllClients() []*clients.Client {
 	broke.clientsMutex.RLock()
 	defer broke.clientsMutex.RUnlock()
@@ -123,7 +136,9 @@ func (broke *Broke) GetAllClients() []*clients.Client {
 	return cl
 }
 
-// SendMessage will put a message to be processed by GoBroke, this can be used to send a message to logic or clients
+// SendMessage queues a message for processing by GoBroke.
+// This method can be used to send messages to both logic handlers and clients.
+// If the message is from a client, their last message timestamp is updated.
 func (broke *Broke) SendMessage(message types.Message) {
 	if message.FromClient != nil {
 		message.FromClient.SetLastMessageNow()
@@ -131,12 +146,16 @@ func (broke *Broke) SendMessage(message types.Message) {
 	broke.receiveQueue <- message
 }
 
-// SendMessageQuickly will put a message to be processed by the endpoint directly, *this can be used to send a message to clients only*
+// SendMessageQuickly sends a message directly to the endpoint for processing.
+// This method should only be used for client-to-client communication as it
+// bypasses logic handlers.
 func (broke *Broke) SendMessageQuickly(message types.Message) {
 	broke.sendQueue <- message
 }
 
-// Start GoBroke
+// Start begins processing messages in the GoBroke instance.
+// It runs until the context is cancelled, at which point it closes
+// all message queues and stops processing.
 func (broke *Broke) Start() {
 	for {
 		select {
