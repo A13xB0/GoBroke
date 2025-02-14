@@ -269,22 +269,17 @@ Messages in GoBroke contain:
    - Use WORKER for sequential or rate-limited processing
    - Use PASSIVE for background tasks and monitoring
 
-2. **Error Handling**:
-   - Always handle errors returned from logic modules
-   - Implement proper error logging and recovery
-   - Use the provided error types from broke-errors package
-
-3. **Context Usage**:
+2. **Context Usage**:
    - Use the context provided by LogicBase for cancellation
    - Add timeouts where appropriate
    - Handle context cancellation in worker loops
 
-4. **Message Processing**:
+3. **Message Processing**:
    - Keep message processing logic concise
    - Use appropriate goroutines for concurrent processing
    - Consider message ordering requirements when choosing logic types
 
-5. **LogicBase Usage**:
+4. **LogicBase Usage**:
    - Extend LogicBase for all logic implementations
    - Use the provided context for cancellation handling
    - Access common functionality through LogicBase methods
