@@ -187,7 +187,7 @@ func (w *inactivityMonitor) RunLogic(message types.Message) error {
 
 ```go
 ctx := context.Background()
-gb, err := GoBroke.New(nil, GoBroke.WithContext(ctx))
+gb, err := GoBroke.New(yourendpoint, GoBroke.WithContext(ctx))
 if err != nil {
     panic(err)
 }
