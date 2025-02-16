@@ -51,7 +51,7 @@ func (w *broadcasterWorker) work(msg types.Message) {
 		for _, client := range allClients {
 			sMsg := types.Message{
 				ToClient:   []*clients.Client{client},
-				FromLogic:  w,
+				FromLogic:  w.Name(),
 				MessageRaw: msg.MessageRaw,
 			}
 			w.SendMessage(sMsg)

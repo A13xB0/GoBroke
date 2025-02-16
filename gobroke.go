@@ -14,16 +14,20 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
+type middlewareFunc func(types.Message) types.Message
+
 // Broke represents a message broker instance that manages client connections,
 // message routing, and custom logic handlers.
 type Broke struct {
-	endpoint     endpoint.Endpoint
-	logic        map[string]types.Logic
-	clients      map[string]*clients.Client
-	clientsMutex sync.RWMutex
-	sendQueue    chan types.Message
-	receiveQueue chan types.Message
-	ctx          context.Context
+	endpoint           endpoint.Endpoint
+	logic              map[types.LogicName]types.Logic
+	clients            map[string]*clients.Client
+	clientsMutex       sync.RWMutex
+	sendQueue          chan types.Message
+	receiveQueue       chan types.Message
+	ctx                context.Context
+	recvMiddlewareFunc []middlewareFunc
+	sendMiddlewareFunc []middlewareFunc
 }
 
 // New creates a new GoBroke instance with the specified endpoint and optional configuration.
@@ -38,7 +42,7 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 
 	gb := &Broke{
 		endpoint:     endpoint,
-		logic:        make(map[string]types.Logic),
+		logic:        make(map[types.LogicName]types.Logic),
 		clients:      make(map[string]*clients.Client),
 		receiveQueue: make(chan types.Message, o.channelSize),
 		sendQueue:    make(chan types.Message, o.channelSize),
@@ -69,7 +73,7 @@ func (broke *Broke) AddLogic(logic types.Logic) error {
 
 // RemoveLogic removes a logic handler from the GoBroke instance by its name.
 // It returns nil even if the logic handler doesn't exist.
-func (broke *Broke) RemoveLogic(name string) error {
+func (broke *Broke) RemoveLogic(name types.LogicName) error {
 	if _, ok := broke.logic[name]; ok {
 		delete(broke.logic, name)
 	}
@@ -140,6 +144,9 @@ func (broke *Broke) GetAllClients() []*clients.Client {
 // This method can be used to send messages to both logic handlers and clients.
 // If the message is from a client, their last message timestamp is updated.
 func (broke *Broke) SendMessage(message types.Message) {
+	for _, middleFn := range broke.sendMiddlewareFunc {
+		message = middleFn(message)
+	}
 	if message.FromClient != nil {
 		message.FromClient.SetLastMessageNow()
 	}
@@ -150,7 +157,30 @@ func (broke *Broke) SendMessage(message types.Message) {
 // This method should only be used for client-to-client communication as it
 // bypasses logic handlers.
 func (broke *Broke) SendMessageQuickly(message types.Message) {
+	for _, middleFn := range broke.sendMiddlewareFunc {
+		message = middleFn(message)
+	}
 	broke.sendQueue <- message
+}
+
+// AttachReceiveMiddleware adds a middleware function to the receive message pipeline.
+// Middleware functions are executed in the order they are attached and can modify
+// or filter messages before they are processed by the broker.
+//
+// The middleware function receives a Message and returns a modified Message or nil
+// if the message should be dropped from the pipeline.
+func (broke *Broke) AttachReceiveMiddleware(mFunc middlewareFunc) {
+	broke.recvMiddlewareFunc = append(broke.recvMiddlewareFunc, mFunc)
+}
+
+// AttachSendMiddleware adds a middleware function to the send message pipeline.
+// Middleware functions are executed in the order they are attached and can modify
+// or filter messages before they are sent to clients.
+//
+// The middleware function receives a Message and returns a modified Message or nil
+// if the message should be dropped from the pipeline.
+func (broke *Broke) AttachSendMiddleware(mFunc middlewareFunc) {
+	broke.sendMiddlewareFunc = append(broke.sendMiddlewareFunc, mFunc)
 }
 
 // Start begins processing messages in the GoBroke instance.
@@ -164,17 +194,38 @@ func (broke *Broke) Start() {
 			close(broke.sendQueue)
 			return
 		case msg := <-broke.receiveQueue:
+			//Default message state of accepted
+			msg.State = types.ACCEPTED
+			// Recv Middlware Func
+			for _, middleFn := range broke.recvMiddlewareFunc {
+				msg = middleFn(msg)
+			}
+			if msg.State != types.ACCEPTED {
+				continue
+			}
 			if len(msg.ToClient) != 0 {
 				broke.sendQueue <- msg
 			}
-			for _, logicFn := range broke.logic {
-				switch logicFn.Type() {
-				case types.WORKER:
-					logicFn.RunLogic(msg) //todo: handle errors
-				case types.DISPATCHED:
-					go logicFn.RunLogic(msg) //todo: handle errors
-				case types.PASSIVE:
+			// Process message through registered logic handlers
+			for _, logicName := range msg.ToLogic {
+				if logicFn, ok := broke.logic[logicName]; ok {
+					switch logicFn.Type() {
+					case types.WORKER:
+						if err := logicFn.RunLogic(msg); err != nil {
+							// TODO: Implement error handling strategy
+							continue
+						}
+					case types.DISPATCHED:
+						go func(l types.Logic, m types.Message) {
+							if err := l.RunLogic(m); err != nil {
+								// TODO: Implement error handling strategy
+							}
+						}(logicFn, msg)
+					case types.PASSIVE:
+						// Passive logic handlers don't process messages
+					}
 				}
+				// TODO: Consider logging when logic handler is not found
 			}
 		}
 	}

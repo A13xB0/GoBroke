@@ -37,3 +37,9 @@ var (
 	// ErrorNoEndpointProvided indicates an attempt to create a server without an endpoint.
 	ErrorNoEndpointProvided = errors.New("no endpoint provided")
 )
+
+// Message related errors
+var (
+	// Error tag does not exist
+	ErrorTagDoesNotExist = errors.New("tag does not exist")
+)

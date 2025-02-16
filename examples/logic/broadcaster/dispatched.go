@@ -31,7 +31,7 @@ func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
 	clients := w.GetAllClients()
 	sMsg := types.Message{
 		ToClient:   clients,
-		FromLogic:  w,
+		FromLogic:  w.Name(),
 		MessageRaw: msg.MessageRaw,
 	}
 	w.SendMessage(sMsg)

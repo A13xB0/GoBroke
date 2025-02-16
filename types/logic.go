@@ -4,6 +4,9 @@ package types
 // LogicType represents the execution mode of a logic handler.
 type LogicType int
 
+// LogicName represents the name of the logic handler
+type LogicName string
+
 const (
 	// DISPATCHED indicates the logic handler runs in a new goroutine for each message.
 	DISPATCHED LogicType = iota
@@ -25,5 +28,5 @@ type Logic interface {
 	Type() LogicType
 
 	// Name returns a unique identifier for this logic handler.
-	Name() string
+	Name() LogicName
 }
