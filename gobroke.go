@@ -187,6 +187,7 @@ func (broke *Broke) AttachSendMiddleware(mFunc middlewareFunc) {
 // It runs until the context is cancelled, at which point it closes
 // all message queues and stops processing.
 func (broke *Broke) Start() {
+	broke.endpoint.Start(broke.ctx)
 	for {
 		select {
 		case <-broke.ctx.Done():
