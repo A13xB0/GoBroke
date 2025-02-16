@@ -10,6 +10,9 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
+// This ensures this logic can be addressed from another logic
+const Name types.LogicName = "broadcaster"
+
 // inactivityMonitor implements a passive logic handler that periodically checks
 // for and removes inactive clients from the broker.
 type inactivityMonitor struct {
@@ -25,7 +28,7 @@ type inactivityMonitor struct {
 // Returns a types.Logic interface that runs passively in the background.
 func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) types.Logic {
 	worker := inactivityMonitor{
-		LogicBase:         GoBroke.NewLogicBase("inactivitymonitor", types.PASSIVE, broke),
+		LogicBase:         GoBroke.NewLogicBase(Name, types.PASSIVE, broke),
 		inactivityMinutes: inactivityMinutes,
 	}
 	worker.startWorker()

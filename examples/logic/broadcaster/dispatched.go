@@ -6,6 +6,8 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
+const Name types.LogicName = "broadcaster"
+
 // broadcasterDispatched implements a dispatched-type logic handler that broadcasts messages
 // to all connected clients concurrently. Each message broadcast runs in its own goroutine.
 type broadcasterDispatched struct {
@@ -17,7 +19,7 @@ type broadcasterDispatched struct {
 // This implementation processes each message in a separate goroutine.
 func CreateDispatched(broke *GoBroke.Broke) types.Logic {
 	worker := broadcasterDispatched{
-		LogicBase: GoBroke.NewLogicBase("broadcaster", types.DISPATCHED, broke),
+		LogicBase: GoBroke.NewLogicBase(Name, types.DISPATCHED, broke),
 	}
 
 	return &worker

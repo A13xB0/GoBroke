@@ -22,7 +22,7 @@ type broadcasterWorker struct {
 // starts the worker's processing loop, and returns it as a types.Logic interface.
 func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
 	worker := broadcasterWorker{
-		LogicBase: GoBroke.NewLogicBase("broadcaster", types.WORKER, broke),
+		LogicBase: GoBroke.NewLogicBase(Name, types.WORKER, broke),
 		receive:   make(chan types.Message),
 	}
 	worker.startWorker()

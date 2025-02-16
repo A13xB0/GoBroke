@@ -261,6 +261,68 @@ Messages in GoBroke contain:
 - Raw message data (`MessageRaw`)
 - Metadata for additional context (`Metadata`)
 - Unique identifier (`UUID`)
+- Message state (`State`)
+- Tags for middleware processing (`Tags`)
+
+### Message State and Control
+
+Messages can be in one of two states:
+- `ACCEPTED` (default): Message continues through the processing pipeline
+- `REJECTED`: Message is dropped from the processing pipeline
+
+Control methods:
+```go
+// Accept the message for further processing
+message.Accept()
+
+// Reject the message to prevent further processing
+message.Reject()
+```
+
+### Message Tags
+
+Tags provide a way to attach and retrieve arbitrary data during message processing:
+```go
+// Add a tag to the message
+message.AddTag("priority", "high")
+
+// Retrieve a tag value
+value, err := message.GetTag("priority", nil)
+```
+
+## Middleware
+
+GoBroke supports middleware functions for both receiving and sending messages. Middleware can modify messages, add tags, or control message flow through accept/reject states.
+
+### Adding Middleware
+
+```go
+// Middleware function type
+type middlewareFunc func(types.Message) types.Message
+
+// Add receive middleware (executed when messages are received)
+gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
+    // Process incoming message
+    return msg
+})
+
+// Add send middleware (executed before messages are sent)
+gb.AttachSendMiddleware(func(msg types.Message) types.Message {
+    // Process outgoing message
+    return msg
+})
+```
+
+Example middleware for message filtering:
+```go
+gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
+    // Reject messages larger than 1MB
+    if len(msg.MessageRaw) > 1024*1024 {
+        msg.Reject()
+    }
+    return msg
+})
+```
 
 ## Best Practices
 

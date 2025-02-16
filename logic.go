@@ -24,9 +24,9 @@ type LogicBase struct {
 //   - broke: Reference to the broker instance
 //
 // Returns a LogicBase configured with the provided parameters and a derived context.
-func NewLogicBase(name string, logicType types.LogicType, broke *Broke) LogicBase {
+func NewLogicBase(name types.LogicName, logicType types.LogicType, broke *Broke) LogicBase {
 	return LogicBase{
-		name:      types.LogicName(name),
+		name:      name,
 		logicType: logicType,
 		Broke:     broke,
 		Ctx:       context.WithoutCancel(broke.ctx),
