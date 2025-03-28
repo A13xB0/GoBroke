@@ -200,7 +200,39 @@ func (broke *Broke) Start() {
 			close(broke.sendQueue)
 			return
 		case msg := <-broke.receiveQueue:
-			broke.ProcessMessage(msg)
+			//Default message state of accepted
+			msg.State = types.ACCEPTED
+			// Recv Middlware Func
+			for _, middleFn := range broke.recvMiddlewareFunc {
+				msg = middleFn(msg)
+			}
+			if msg.State != types.ACCEPTED {
+				return
+			}
+			if len(msg.ToClient) != 0 {
+				broke.sendQueue <- msg
+			}
+			// Process message through registered logic handlers
+			for _, logicName := range msg.ToLogic {
+				if logicFn, ok := broke.logic[logicName]; ok {
+					switch logicFn.Type() {
+					case types.WORKER:
+						if err := logicFn.RunLogic(msg); err != nil {
+							// TODO: Implement error handling strategy
+							continue
+						}
+					case types.DISPATCHED:
+						go func(l types.Logic, m types.Message) {
+							if err := l.RunLogic(m); err != nil {
+								// TODO: Implement error handling strategy
+							}
+						}(logicFn, msg)
+					case types.PASSIVE:
+						// Passive logic handlers don't process messages
+					}
+				}
+				// TODO: Consider logging when logic handler is not found
+			}
 		}
 	}
 }
