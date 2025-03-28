@@ -161,6 +161,11 @@ func (broke *Broke) SendMessageQuickly(message types.Message) {
 		message = middleFn(message)
 	}
 	broke.sendQueue <- message
+
+}
+
+func (broke *Broke) SendMessageDirectly(message types.Message) {
+	_ = broke.endpoint.ReplyDirectly(message)
 }
 
 // AttachReceiveMiddleware adds a middleware function to the receive message pipeline.
@@ -195,39 +200,50 @@ func (broke *Broke) Start() {
 			close(broke.sendQueue)
 			return
 		case msg := <-broke.receiveQueue:
-			//Default message state of accepted
-			msg.State = types.ACCEPTED
-			// Recv Middlware Func
-			for _, middleFn := range broke.recvMiddlewareFunc {
-				msg = middleFn(msg)
-			}
-			if msg.State != types.ACCEPTED {
-				continue
-			}
-			if len(msg.ToClient) != 0 {
-				broke.sendQueue <- msg
-			}
-			// Process message through registered logic handlers
-			for _, logicName := range msg.ToLogic {
-				if logicFn, ok := broke.logic[logicName]; ok {
-					switch logicFn.Type() {
-					case types.WORKER:
-						if err := logicFn.RunLogic(msg); err != nil {
-							// TODO: Implement error handling strategy
-							continue
-						}
-					case types.DISPATCHED:
-						go func(l types.Logic, m types.Message) {
-							if err := l.RunLogic(m); err != nil {
-								// TODO: Implement error handling strategy
-							}
-						}(logicFn, msg)
-					case types.PASSIVE:
-						// Passive logic handlers don't process messages
-					}
+			broke.ProcessMessage(msg)
+		}
+	}
+}
+
+// StartWithoutProcessing in the GoBroke instance is intended to start the endpoint but messages must be manually
+// processed.
+func (broke *Broke) StartWithoutProcessing() {
+	broke.endpoint.Start(broke.ctx)
+	select {}
+}
+
+// ProcessMessage can be used to manually process a message outside the main loop. This can be useful for doing such
+// things as running sessions in a limited amount of goroutines. All logic types are run sequentially.
+func (broke *Broke) ProcessMessage(msg types.Message) {
+	//Default message state of accepted
+	msg.State = types.ACCEPTED
+	// Recv Middlware Func
+	for _, middleFn := range broke.recvMiddlewareFunc {
+		msg = middleFn(msg)
+	}
+	if msg.State != types.ACCEPTED {
+		return
+	}
+	if len(msg.ToClient) != 0 {
+		broke.sendQueue <- msg
+	}
+	// Process message through registered logic handlers
+	for _, logicName := range msg.ToLogic {
+		if logicFn, ok := broke.logic[logicName]; ok {
+			switch logicFn.Type() {
+			case types.WORKER:
+				if err := logicFn.RunLogic(msg); err != nil {
+					// TODO: Implement error handling strategy
+					continue
 				}
-				// TODO: Consider logging when logic handler is not found
+			case types.DISPATCHED:
+				if err := logicFn.RunLogic(msg); err != nil {
+					// TODO: Implement error handling strategy
+				}
+			case types.PASSIVE:
+				// Passive logic handlers don't process messages
 			}
 		}
+		// TODO: Consider logging when logic handler is not found
 	}
 }

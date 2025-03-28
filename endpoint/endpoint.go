@@ -16,6 +16,9 @@ type Endpoint interface {
 	// Returns an error if the sender channel cannot be established.
 	Sender(chan types.Message) error
 
+	// ReplyDirectly allows us to send a message directly to the endpoint without a channel in between.
+	ReplyDirectly(msg types.Message) error
+
 	// Receiver sets up the channel for incoming messages from clients to the broker.
 	// Returns an error if the receiver channel cannot be established.
 	Receiver(chan types.Message) error

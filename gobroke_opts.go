@@ -9,16 +9,18 @@ type brokeOptsFunc func(*brokeOpts)
 
 // brokeOpts holds configuration options for the GoBroke broker.
 type brokeOpts struct {
-	channelSize int             // Size of message channels for queuing
-	ctx         context.Context // Context for cancellation and value propagation
+	channelSize                        int             // Size of message channels for queuing
+	ctx                                context.Context // Context for cancellation and value propagation
+	experimentalOverrideDirectMessages bool
 }
 
 // defaultOpts returns a brokeOpts with default values.
 // By default, it sets a channel size of 100 and uses context.Background().
 func defaultOpts() brokeOpts {
 	return brokeOpts{
-		channelSize: 100,
-		ctx:         context.Background(),
+		channelSize:                        100,
+		ctx:                                context.Background(),
+		experimentalOverrideDirectMessages: false,
 	}
 }
 
