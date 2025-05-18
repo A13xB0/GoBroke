@@ -263,8 +263,21 @@ func convertToTypedValueMap(metadata map[string]any) map[string]*proto.TypedValu
 	if metadata == nil {
 		return nil
 	}
-	result := make(map[string]*proto.TypedValue, len(metadata))
+
+	// Create a copy of the metadata map to avoid concurrent map access issues
+	metadataCopy := make(map[string]any, len(metadata))
+
+	// Use a mutex to safely copy the map
+	var mu sync.Mutex
+	mu.Lock()
 	for k, v := range metadata {
+		metadataCopy[k] = v
+	}
+	mu.Unlock()
+
+	// Process the copy
+	result := make(map[string]*proto.TypedValue, len(metadataCopy))
+	for k, v := range metadataCopy {
 		result[k] = interfaceToTypedValue(v)
 	}
 	return result
@@ -275,8 +288,21 @@ func convertTagsToTypedValueMap(tags map[string]interface{}) map[string]*proto.T
 	if tags == nil {
 		return nil
 	}
-	result := make(map[string]*proto.TypedValue, len(tags))
+
+	// Create a copy of the tags map to avoid concurrent map access issues
+	tagsCopy := make(map[string]interface{}, len(tags))
+
+	// Use a mutex to safely copy the map
+	var mu sync.Mutex
+	mu.Lock()
 	for k, v := range tags {
+		tagsCopy[k] = v
+	}
+	mu.Unlock()
+
+	// Process the copy
+	result := make(map[string]*proto.TypedValue, len(tagsCopy))
+	for k, v := range tagsCopy {
 		result[k] = interfaceToTypedValue(v)
 	}
 	return result
