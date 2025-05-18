@@ -13,6 +13,24 @@ message RedisMessage {
   string from_client_id = 5;  // Source client UUID, if applicable
   string from_logic = 6;      // Source logic name, if applicable
   bytes message_raw = 7;      // Raw message payload
-  map<string, bytes> metadata = 8;  // Message metadata
-  map<string, bytes> tags = 9;      // Message tags
+  map<string, TypedValue> metadata = 8;  // Message metadata with type information
+  map<string, TypedValue> tags = 9;      // Message tags with type information
+}
+
+// TypedValue represents a value with its type information.
+message TypedValue {
+  // The type of the value
+  enum ValueType {
+    STRING = 0;
+    INT = 1;
+    FLOAT = 2;
+    BOOL = 3;
+    BYTES = 4;
+    MAP = 5;
+    ARRAY = 6;
+    NULL = 7;
+  }
+  
+  ValueType type = 1;  // The type of the value
+  bytes value = 2;     // The serialized value
 }

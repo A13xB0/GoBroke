@@ -21,6 +21,71 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// The type of the value
+type TypedValue_ValueType int32
+
+const (
+	TypedValue_STRING TypedValue_ValueType = 0
+	TypedValue_INT    TypedValue_ValueType = 1
+	TypedValue_FLOAT  TypedValue_ValueType = 2
+	TypedValue_BOOL   TypedValue_ValueType = 3
+	TypedValue_BYTES  TypedValue_ValueType = 4
+	TypedValue_MAP    TypedValue_ValueType = 5
+	TypedValue_ARRAY  TypedValue_ValueType = 6
+	TypedValue_NULL   TypedValue_ValueType = 7
+)
+
+// Enum value maps for TypedValue_ValueType.
+var (
+	TypedValue_ValueType_name = map[int32]string{
+		0: "STRING",
+		1: "INT",
+		2: "FLOAT",
+		3: "BOOL",
+		4: "BYTES",
+		5: "MAP",
+		6: "ARRAY",
+		7: "NULL",
+	}
+	TypedValue_ValueType_value = map[string]int32{
+		"STRING": 0,
+		"INT":    1,
+		"FLOAT":  2,
+		"BOOL":   3,
+		"BYTES":  4,
+		"MAP":    5,
+		"ARRAY":  6,
+		"NULL":   7,
+	}
+)
+
+func (x TypedValue_ValueType) Enum() *TypedValue_ValueType {
+	p := new(TypedValue_ValueType)
+	*p = x
+	return p
+}
+
+func (x TypedValue_ValueType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TypedValue_ValueType) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_redis_proto_enumTypes[0].Descriptor()
+}
+
+func (TypedValue_ValueType) Type() protoreflect.EnumType {
+	return &file_proto_redis_proto_enumTypes[0]
+}
+
+func (x TypedValue_ValueType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TypedValue_ValueType.Descriptor instead.
+func (TypedValue_ValueType) EnumDescriptor() ([]byte, []int) {
+	return file_proto_redis_proto_rawDescGZIP(), []int{1, 0}
+}
+
 // RedisMessage represents a message that will be serialized and sent through Redis.
 type RedisMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -31,8 +96,8 @@ type RedisMessage struct {
 	FromClientId  string                 `protobuf:"bytes,5,opt,name=from_client_id,json=fromClientId,proto3" json:"from_client_id,omitempty"`                                             // Source client UUID, if applicable
 	FromLogic     string                 `protobuf:"bytes,6,opt,name=from_logic,json=fromLogic,proto3" json:"from_logic,omitempty"`                                                        // Source logic name, if applicable
 	MessageRaw    []byte                 `protobuf:"bytes,7,opt,name=message_raw,json=messageRaw,proto3" json:"message_raw,omitempty"`                                                     // Raw message payload
-	Metadata      map[string][]byte      `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Message metadata
-	Tags          map[string][]byte      `protobuf:"bytes,9,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`         // Message tags
+	Metadata      map[string]*TypedValue `protobuf:"bytes,8,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Message metadata with type information
+	Tags          map[string]*TypedValue `protobuf:"bytes,9,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`         // Message tags with type information
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,16 +181,69 @@ func (x *RedisMessage) GetMessageRaw() []byte {
 	return nil
 }
 
-func (x *RedisMessage) GetMetadata() map[string][]byte {
+func (x *RedisMessage) GetMetadata() map[string]*TypedValue {
 	if x != nil {
 		return x.Metadata
 	}
 	return nil
 }
 
-func (x *RedisMessage) GetTags() map[string][]byte {
+func (x *RedisMessage) GetTags() map[string]*TypedValue {
 	if x != nil {
 		return x.Tags
+	}
+	return nil
+}
+
+// TypedValue represents a value with its type information.
+type TypedValue struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          TypedValue_ValueType   `protobuf:"varint,1,opt,name=type,proto3,enum=gobroke.TypedValue_ValueType" json:"type,omitempty"` // The type of the value
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                                  // The serialized value
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TypedValue) Reset() {
+	*x = TypedValue{}
+	mi := &file_proto_redis_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TypedValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TypedValue) ProtoMessage() {}
+
+func (x *TypedValue) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_redis_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TypedValue.ProtoReflect.Descriptor instead.
+func (*TypedValue) Descriptor() ([]byte, []int) {
+	return file_proto_redis_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TypedValue) GetType() TypedValue_ValueType {
+	if x != nil {
+		return x.Type
+	}
+	return TypedValue_STRING
+}
+
+func (x *TypedValue) GetValue() []byte {
+	if x != nil {
+		return x.Value
 	}
 	return nil
 }
@@ -134,7 +252,7 @@ var File_proto_redis_proto protoreflect.FileDescriptor
 
 const file_proto_redis_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/redis.proto\x12\agobroke\"\xe3\x03\n" +
+	"\x11proto/redis.proto\x12\agobroke\"\x8d\x04\n" +
 	"\fRedisMessage\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12!\n" +
@@ -147,13 +265,27 @@ const file_proto_redis_proto_rawDesc = "" +
 	"\vmessage_raw\x18\a \x01(\fR\n" +
 	"messageRaw\x12?\n" +
 	"\bmetadata\x18\b \x03(\v2#.gobroke.RedisMessage.MetadataEntryR\bmetadata\x123\n" +
-	"\x04tags\x18\t \x03(\v2\x1f.gobroke.RedisMessage.TagsEntryR\x04tags\x1a;\n" +
+	"\x04tags\x18\t \x03(\v2\x1f.gobroke.RedisMessage.TagsEntryR\x04tags\x1aP\n" +
 	"\rMetadataEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\x1a7\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.gobroke.TypedValueR\x05value:\x028\x01\x1aL\n" +
 	"\tTagsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01B!Z\x1fgithub.com/A13xB0/GoBroke/protob\x06proto3"
+	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
+	"\x05value\x18\x02 \x01(\v2\x13.gobroke.TypedValueR\x05value:\x028\x01\"\xb5\x01\n" +
+	"\n" +
+	"TypedValue\x121\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x1d.gobroke.TypedValue.ValueTypeR\x04type\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"^\n" +
+	"\tValueType\x12\n" +
+	"\n" +
+	"\x06STRING\x10\x00\x12\a\n" +
+	"\x03INT\x10\x01\x12\t\n" +
+	"\x05FLOAT\x10\x02\x12\b\n" +
+	"\x04BOOL\x10\x03\x12\t\n" +
+	"\x05BYTES\x10\x04\x12\a\n" +
+	"\x03MAP\x10\x05\x12\t\n" +
+	"\x05ARRAY\x10\x06\x12\b\n" +
+	"\x04NULL\x10\aB!Z\x1fgithub.com/A13xB0/GoBroke/protob\x06proto3"
 
 var (
 	file_proto_redis_proto_rawDescOnce sync.Once
@@ -167,20 +299,26 @@ func file_proto_redis_proto_rawDescGZIP() []byte {
 	return file_proto_redis_proto_rawDescData
 }
 
-var file_proto_redis_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_proto_redis_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_redis_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_redis_proto_goTypes = []any{
-	(*RedisMessage)(nil), // 0: gobroke.RedisMessage
-	nil,                  // 1: gobroke.RedisMessage.MetadataEntry
-	nil,                  // 2: gobroke.RedisMessage.TagsEntry
+	(TypedValue_ValueType)(0), // 0: gobroke.TypedValue.ValueType
+	(*RedisMessage)(nil),      // 1: gobroke.RedisMessage
+	(*TypedValue)(nil),        // 2: gobroke.TypedValue
+	nil,                       // 3: gobroke.RedisMessage.MetadataEntry
+	nil,                       // 4: gobroke.RedisMessage.TagsEntry
 }
 var file_proto_redis_proto_depIdxs = []int32{
-	1, // 0: gobroke.RedisMessage.metadata:type_name -> gobroke.RedisMessage.MetadataEntry
-	2, // 1: gobroke.RedisMessage.tags:type_name -> gobroke.RedisMessage.TagsEntry
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: gobroke.RedisMessage.metadata:type_name -> gobroke.RedisMessage.MetadataEntry
+	4, // 1: gobroke.RedisMessage.tags:type_name -> gobroke.RedisMessage.TagsEntry
+	0, // 2: gobroke.TypedValue.type:type_name -> gobroke.TypedValue.ValueType
+	2, // 3: gobroke.RedisMessage.MetadataEntry.value:type_name -> gobroke.TypedValue
+	2, // 4: gobroke.RedisMessage.TagsEntry.value:type_name -> gobroke.TypedValue
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_proto_redis_proto_init() }
@@ -193,13 +331,14 @@ func file_proto_redis_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_redis_proto_rawDesc), len(file_proto_redis_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   3,
+			NumEnums:      1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_proto_redis_proto_goTypes,
 		DependencyIndexes: file_proto_redis_proto_depIdxs,
+		EnumInfos:         file_proto_redis_proto_enumTypes,
 		MessageInfos:      file_proto_redis_proto_msgTypes,
 	}.Build()
 	File_proto_redis_proto = out.File

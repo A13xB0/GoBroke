@@ -4,6 +4,7 @@ package GoBroke
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -166,8 +167,8 @@ func (rc *redisClient) publishMessage(message types.Message) error {
 		ToClientIds: toClientIDs,
 		ToLogic:     toLogic,
 		MessageRaw:  message.MessageRaw,
-		Metadata:    convertToByteMap(message.Metadata),
-		Tags:        convertTagsToByteMap(message.Tags),
+		Metadata:    convertToTypedValueMap(message.Metadata),
+		Tags:        convertTagsToTypedValueMap(message.Tags),
 	}
 
 	// Set client ID if message is from a client
@@ -200,103 +201,140 @@ func convertToLogicNames(logicNames []string) []types.LogicName {
 	return result
 }
 
-// convertMetadata converts a map of string to []byte to a map of string to any
-func convertMetadata(metadata map[string][]byte) map[string]any {
+// convertMetadata converts a map of string to *TypedValue to a map of string to any
+func convertMetadata(metadata map[string]*proto.TypedValue) map[string]any {
 	if metadata == nil {
 		return nil
 	}
 	result := make(map[string]any, len(metadata))
 	for k, v := range metadata {
-		// Try to detect if this is a string or binary data
-		if isASCII(v) {
-			// If it looks like a string, convert it to a string
-			result[k] = string(v)
-		} else {
-			// Otherwise, keep it as binary data
-			result[k] = v
-		}
+		result[k] = typedValueToInterface(v)
 	}
 	return result
 }
 
-// convertTags converts a map of string to []byte to a map of string to interface{}
-func convertTags(tags map[string][]byte) map[string]interface{} {
+// convertTags converts a map of string to *TypedValue to a map of string to interface{}
+func convertTags(tags map[string]*proto.TypedValue) map[string]interface{} {
 	if tags == nil {
 		return make(map[string]interface{})
 	}
 	result := make(map[string]interface{}, len(tags))
 	for k, v := range tags {
-		// Try to detect if this is a string or binary data
-		if isASCII(v) {
-			// If it looks like a string, convert it to a string
-			result[k] = string(v)
-		} else {
-			// Otherwise, keep it as binary data
-			result[k] = v
-		}
+		result[k] = typedValueToInterface(v)
 	}
 	return result
 }
 
-// convertToByteMap converts a map of string to any to a map of string to []byte
-func convertToByteMap(metadata map[string]any) map[string][]byte {
+// typedValueToInterface converts a TypedValue to its corresponding Go type
+func typedValueToInterface(tv *proto.TypedValue) interface{} {
+	if tv == nil {
+		return nil
+	}
+
+	switch tv.Type {
+	case proto.TypedValue_STRING:
+		return string(tv.Value)
+	case proto.TypedValue_INT:
+		// Parse int64 from string
+		i, _ := strconv.ParseInt(string(tv.Value), 10, 64)
+		return i
+	case proto.TypedValue_FLOAT:
+		// For simplicity, convert to string and parse
+		f, _ := strconv.ParseFloat(string(tv.Value), 64)
+		return f
+	case proto.TypedValue_BOOL:
+		// Boolean is represented as a single byte (0 or 1)
+		if len(tv.Value) > 0 && tv.Value[0] != 0 {
+			return true
+		}
+		return false
+	case proto.TypedValue_BYTES:
+		return tv.Value
+	case proto.TypedValue_NULL:
+		return nil
+	default:
+		// For MAP and ARRAY types, or unknown types, return the raw bytes
+		return tv.Value
+	}
+}
+
+// convertToTypedValueMap converts a map of string to any to a map of string to *TypedValue
+func convertToTypedValueMap(metadata map[string]any) map[string]*proto.TypedValue {
 	if metadata == nil {
 		return nil
 	}
-	result := make(map[string][]byte, len(metadata))
+	result := make(map[string]*proto.TypedValue, len(metadata))
 	for k, v := range metadata {
-		// Handle different types appropriately
-		switch val := v.(type) {
-		case string:
-			result[k] = []byte(val)
-		case []byte:
-			result[k] = val
-		default:
-			// For other types, use a string representation
-			result[k] = []byte(fmt.Sprintf("%v", v))
-		}
+		result[k] = interfaceToTypedValue(v)
 	}
 	return result
 }
 
-// convertTagsToByteMap converts a map of string to interface{} to a map of string to []byte
-func convertTagsToByteMap(tags map[string]interface{}) map[string][]byte {
+// convertTagsToTypedValueMap converts a map of string to interface{} to a map of string to *TypedValue
+func convertTagsToTypedValueMap(tags map[string]interface{}) map[string]*proto.TypedValue {
 	if tags == nil {
 		return nil
 	}
-	result := make(map[string][]byte, len(tags))
+	result := make(map[string]*proto.TypedValue, len(tags))
 	for k, v := range tags {
-		// Handle different types appropriately
-		switch val := v.(type) {
-		case string:
-			result[k] = []byte(val)
-		case []byte:
-			result[k] = val
-		default:
-			// For other types, use a string representation
-			result[k] = []byte(fmt.Sprintf("%v", v))
-		}
+		result[k] = interfaceToTypedValue(v)
 	}
 	return result
 }
 
-// isASCII checks if a byte slice contains only ASCII characters
-func isASCII(data []byte) bool {
-	// If it's empty, treat it as a string
-	if len(data) == 0 {
-		return true
-	}
-
-	// Check if it looks like a string (mostly printable ASCII characters)
-	printableCount := 0
-	for _, b := range data {
-		if (b >= 32 && b <= 126) || b == '\n' || b == '\r' || b == '\t' {
-			printableCount++
+// interfaceToTypedValue converts a Go value to a TypedValue
+func interfaceToTypedValue(v interface{}) *proto.TypedValue {
+	if v == nil {
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_NULL,
+			Value: nil,
 		}
 	}
 
-	// If more than 90% of characters are printable, consider it a string
-	return float64(printableCount)/float64(len(data)) > 0.9
+	switch val := v.(type) {
+	case string:
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_STRING,
+			Value: []byte(val),
+		}
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		// Convert any integer type to int64
+		i := reflect.ValueOf(val).Int()
+		// Convert int64 to string
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_INT,
+			Value: []byte(strconv.FormatInt(i, 10)),
+		}
+	case float32, float64:
+		// Convert any float type to float64
+		f := reflect.ValueOf(val).Float()
+		// Convert float to string for simplicity
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_FLOAT,
+			Value: []byte(strconv.FormatFloat(f, 'g', -1, 64)),
+		}
+	case bool:
+		// Boolean is represented as a single byte (0 or 1)
+		b := []byte{0}
+		if val {
+			b[0] = 1
+		}
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_BOOL,
+			Value: b,
+		}
+	case []byte:
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_BYTES,
+			Value: val,
+		}
+	default:
+		// For complex types, convert to string representation
+		return &proto.TypedValue{
+			Type:  proto.TypedValue_STRING,
+			Value: []byte(fmt.Sprintf("%v", val)),
+		}
+	}
 }
 
 // isClientOnOtherInstance checks if a client is available on another instance.
