@@ -55,6 +55,16 @@ When a client connects to a GoBroke instance with Redis enabled:
 2. The client's UUID is also registered in Redis with the instance ID
 3. This registration expires after 24 hours (to prevent stale entries)
 
+### Client Discovery
+
+The `GetAllClients` method has been enhanced to return clients from all connected instances:
+
+1. It first collects all locally connected clients
+2. If Redis is enabled, it queries Redis for clients registered on other instances
+3. It creates virtual client references for remote clients and includes them in the result
+
+This allows you to get a complete view of all clients across your distributed system.
+
 ### Message Routing
 
 When sending a message to a client:

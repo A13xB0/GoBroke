@@ -172,13 +172,31 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 }
 
 // GetAllClients returns a slice containing all currently connected clients.
+// If Redis is enabled, it also includes clients connected to other instances.
 func (broke *Broke) GetAllClients() []*clients.Client {
+	// Get local clients
 	broke.clientsMutex.RLock()
-	defer broke.clientsMutex.RUnlock()
 	var cl []*clients.Client
 	for _, value := range broke.clients {
 		cl = append(cl, value)
 	}
+	broke.clientsMutex.RUnlock()
+
+	// If Redis is enabled, get clients from other instances
+	if broke.redis != nil {
+		remoteClientIDs, err := broke.redis.getRemoteClientIDs()
+		if err != nil {
+			// Log error but continue with local clients
+			fmt.Printf("Error getting remote clients: %v\n", err)
+		} else {
+			// Create virtual client references for remote clients
+			for _, clientID := range remoteClientIDs {
+				client := clients.New(clients.WithUUID(clientID))
+				cl = append(cl, client)
+			}
+		}
+	}
+
 	return cl
 }
 

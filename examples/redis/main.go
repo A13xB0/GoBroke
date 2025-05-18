@@ -111,6 +111,12 @@ func main() {
 	)
 	broker.SendMessage(msg)
 
+	// Demonstrate GetAllClients functionality
+	fmt.Println("Local and remote clients:")
+	for i, client := range broker.GetAllClients() {
+		fmt.Printf("  Client %d: %s\n", i+1, client.GetUUID())
+	}
+
 	// Wait for context cancellation (Ctrl+C)
 	<-ctx.Done()
 	fmt.Println("Exiting...")

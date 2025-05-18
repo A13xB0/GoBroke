@@ -242,6 +242,43 @@ func (rc *redisClient) unregisterClientFromRedis(client *clients.Client) error {
 	return rc.client.Del(rc.ctx, key).Err()
 }
 
+// getRemoteClientIDs returns a list of client IDs that are registered in Redis
+// but not on this instance.
+func (rc *redisClient) getRemoteClientIDs() ([]string, error) {
+	if !rc.config.Enabled {
+		return nil, nil
+	}
+
+	// Get all client keys from Redis
+	keys, err := rc.client.Keys(rc.ctx, "gobroke:client:*").Result()
+	if err != nil {
+		return nil, fmt.Errorf("error getting client keys from Redis: %w", err)
+	}
+
+	// Extract client IDs from keys
+	clientIDs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		// Extract client ID from key (format: "gobroke:client:{uuid}")
+		clientID := key[len("gobroke:client:"):]
+
+		// Get instance ID for this client
+		instanceID, err := rc.client.Get(rc.ctx, key).Result()
+		if err != nil {
+			// Skip if we can't get the instance ID
+			continue
+		}
+
+		// Skip clients on this instance
+		if instanceID == rc.config.InstanceID {
+			continue
+		}
+
+		clientIDs = append(clientIDs, clientID)
+	}
+
+	return clientIDs, nil
+}
+
 // close closes the Redis client connection.
 func (rc *redisClient) close() error {
 	if !rc.config.Enabled || rc.client == nil {
