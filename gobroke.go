@@ -187,7 +187,7 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 	}
 
 	// If Redis is enabled, get clients from other instances
-	if broke.redis != nil && lo {
+	if broke.redis != nil && !lo {
 		remoteClientIDs, err := broke.redis.getRemoteClientIDs()
 		if err != nil {
 			// Log error but continue with local clients
