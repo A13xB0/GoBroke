@@ -107,12 +107,15 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 	broke.clients[client.GetUUID()] = client
 	broke.clientsMutex.Unlock()
 
+	client.SetLastMessageNow()
+
 	// Register client in Redis if enabled
 	if broke.redis != nil {
 		if err := broke.redis.registerClientInRedis(client); err != nil {
 			// Log error but don't fail registration
 			fmt.Printf("Error registering client in Redis: %v\n", err)
 		}
+		broke.redis.updateClientLastMessageTime(client)
 	}
 
 	return nil
