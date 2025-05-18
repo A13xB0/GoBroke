@@ -302,6 +302,43 @@ func (broke *Broke) SendMessageQuickly(message types.Message) {
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
 	}
+	message.SentQuickly = true
+	// Check if any target clients need Redis routing
+	if broke.redis != nil && len(message.ToClient) > 0 {
+		// Filter clients that are not on this instance
+		var localClients []*clients.Client
+		var needsRedis bool
+
+		for _, client := range message.ToClient {
+			// Check if client is local (has a real client object)
+			broke.clientsMutex.RLock()
+			_, isLocal := broke.clients[client.GetUUID()]
+			broke.clientsMutex.RUnlock()
+
+			if isLocal {
+				localClients = append(localClients, client)
+			} else {
+				// This client needs Redis routing
+				needsRedis = true
+			}
+		}
+
+		// If some clients need Redis routing, publish the message
+		if needsRedis {
+			// Don't wait for Redis publish to complete
+			go func(msg types.Message) {
+				if err := broke.redis.publishMessage(msg); err != nil {
+					// Log error but continue
+					fmt.Printf("Error publishing message to Redis: %v\n", err)
+				}
+			}(message)
+		}
+
+		// Update message with only local clients
+		if len(localClients) < len(message.ToClient) {
+			message.ToClient = localClients
+		}
+	}
 	broke.sendQueue <- message
 }
 
@@ -350,6 +387,9 @@ func (broke *Broke) Start() {
 			close(broke.sendQueue)
 			return
 		case msg := <-broke.receiveQueue:
+			if msg.SentQuickly {
+				broke.sendQueue <- msg
+			}
 			//Default message state of accepted
 			msg.State = types.ACCEPTED
 			// Recv Middlware Func
