@@ -207,9 +207,14 @@ func convertMetadata(metadata map[string][]byte) map[string]any {
 	}
 	result := make(map[string]any, len(metadata))
 	for k, v := range metadata {
-		// For simplicity, we're treating all values as strings
-		// In a real implementation, you might want to deserialize the bytes based on the type
-		result[k] = string(v)
+		// Try to detect if this is a string or binary data
+		if isASCII(v) {
+			// If it looks like a string, convert it to a string
+			result[k] = string(v)
+		} else {
+			// Otherwise, keep it as binary data
+			result[k] = v
+		}
 	}
 	return result
 }
@@ -221,9 +226,14 @@ func convertTags(tags map[string][]byte) map[string]interface{} {
 	}
 	result := make(map[string]interface{}, len(tags))
 	for k, v := range tags {
-		// For simplicity, we're treating all values as strings
-		// In a real implementation, you might want to deserialize the bytes based on the type
-		result[k] = string(v)
+		// Try to detect if this is a string or binary data
+		if isASCII(v) {
+			// If it looks like a string, convert it to a string
+			result[k] = string(v)
+		} else {
+			// Otherwise, keep it as binary data
+			result[k] = v
+		}
 	}
 	return result
 }
@@ -235,9 +245,16 @@ func convertToByteMap(metadata map[string]any) map[string][]byte {
 	}
 	result := make(map[string][]byte, len(metadata))
 	for k, v := range metadata {
-		// For simplicity, we're converting all values to strings
-		// In a real implementation, you might want to serialize based on the type
-		result[k] = []byte(fmt.Sprintf("%v", v))
+		// Handle different types appropriately
+		switch val := v.(type) {
+		case string:
+			result[k] = []byte(val)
+		case []byte:
+			result[k] = val
+		default:
+			// For other types, use a string representation
+			result[k] = []byte(fmt.Sprintf("%v", v))
+		}
 	}
 	return result
 }
@@ -249,11 +266,37 @@ func convertTagsToByteMap(tags map[string]interface{}) map[string][]byte {
 	}
 	result := make(map[string][]byte, len(tags))
 	for k, v := range tags {
-		// For simplicity, we're converting all values to strings
-		// In a real implementation, you might want to serialize based on the type
-		result[k] = []byte(fmt.Sprintf("%v", v))
+		// Handle different types appropriately
+		switch val := v.(type) {
+		case string:
+			result[k] = []byte(val)
+		case []byte:
+			result[k] = val
+		default:
+			// For other types, use a string representation
+			result[k] = []byte(fmt.Sprintf("%v", v))
+		}
 	}
 	return result
+}
+
+// isASCII checks if a byte slice contains only ASCII characters
+func isASCII(data []byte) bool {
+	// If it's empty, treat it as a string
+	if len(data) == 0 {
+		return true
+	}
+
+	// Check if it looks like a string (mostly printable ASCII characters)
+	printableCount := 0
+	for _, b := range data {
+		if (b >= 32 && b <= 126) || b == '\n' || b == '\r' || b == '\t' {
+			printableCount++
+		}
+	}
+
+	// If more than 90% of characters are printable, consider it a string
+	return float64(printableCount)/float64(len(data)) > 0.9
 }
 
 // isClientOnOtherInstance checks if a client is available on another instance.
