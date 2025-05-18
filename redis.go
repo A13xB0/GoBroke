@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ type redisClient struct {
 	ctx         context.Context
 	mu          sync.RWMutex
 	clientCache map[string]bool // Cache of client IDs known to be on other instances
+	stopTicker  chan struct{}   // Channel to stop the heartbeat ticker
 }
 
 // newRedisClient creates a new Redis client with the provided configuration.
@@ -79,10 +81,14 @@ func newRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*red
 		broke:       broke,
 		ctx:         ctx,
 		clientCache: make(map[string]bool),
+		stopTicker:  make(chan struct{}),
 	}
 
 	// Start subscription in a goroutine
 	go rc.subscribe()
+
+	// Start the client heartbeat ticker to update last message times
+	go rc.startClientHeartbeat()
 
 	return rc, nil
 }
@@ -279,10 +285,97 @@ func (rc *redisClient) getRemoteClientIDs() ([]string, error) {
 	return clientIDs, nil
 }
 
-// close closes the Redis client connection.
+// close closes the Redis client connection and stops the heartbeat ticker.
 func (rc *redisClient) close() error {
 	if !rc.config.Enabled || rc.client == nil {
 		return nil
 	}
+
+	// Stop the heartbeat ticker
+	close(rc.stopTicker)
+
 	return rc.client.Close()
+}
+
+// startClientHeartbeat starts a ticker that updates client last message times in Redis every second.
+func (rc *redisClient) startClientHeartbeat() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Update last message time for all local clients
+			rc.updateAllClientLastMessageTimes()
+		case <-rc.stopTicker:
+			return
+		case <-rc.ctx.Done():
+			return
+		}
+	}
+}
+
+// updateAllClientLastMessageTimes updates the last message time in Redis for all local clients.
+func (rc *redisClient) updateAllClientLastMessageTimes() {
+	// Get all local clients
+	localClients := rc.broke.GetAllClients(true) // true = local clients only
+
+	for _, client := range localClients {
+		// Update the client's last message time in Redis
+		rc.updateClientLastMessageTime(client)
+	}
+}
+
+// updateClientLastMessageTime updates the last message time in Redis for a specific client.
+func (rc *redisClient) updateClientLastMessageTime(client *clients.Client) {
+	if !rc.config.Enabled {
+		return
+	}
+
+	// Get the client's last message time
+	lastMsgTime := client.GetLastMessage()
+
+	// Skip if the time is zero (client hasn't sent any messages yet)
+	if lastMsgTime.IsZero() {
+		return
+	}
+
+	// Convert time to Unix timestamp for storage
+	timestamp := lastMsgTime.UnixNano()
+
+	// Store the timestamp in Redis
+	key := fmt.Sprintf("gobroke:client:%s:lastmsg", client.GetUUID())
+	err := rc.client.Set(rc.ctx, key, timestamp, 24*time.Hour).Err()
+	if err != nil {
+		// Log error but continue
+		fmt.Printf("Error updating client last message time in Redis: %v\n", err)
+	}
+}
+
+// getClientLastMessageTime retrieves the last message time from Redis for a client.
+// Returns a zero time if the client has no recorded last message time.
+func (rc *redisClient) getClientLastMessageTime(clientID string) time.Time {
+	if !rc.config.Enabled {
+		return time.Time{}
+	}
+
+	key := fmt.Sprintf("gobroke:client:%s:lastmsg", clientID)
+	val, err := rc.client.Get(rc.ctx, key).Result()
+
+	if err != nil {
+		if err != redis.Nil {
+			// Log error but continue
+			fmt.Printf("Error getting client last message time from Redis: %v\n", err)
+		}
+		return time.Time{}
+	}
+
+	// Parse the timestamp
+	timestamp, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		fmt.Printf("Error parsing client last message timestamp: %v\n", err)
+		return time.Time{}
+	}
+
+	return time.Unix(0, timestamp)
 }

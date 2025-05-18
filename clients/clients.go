@@ -51,3 +51,9 @@ func (c *Client) GetLastMessage() time.Time {
 func (c *Client) SetLastMessageNow() {
 	c.lastMessage = time.Now()
 }
+
+// SetLastMessage sets the client's last message timestamp to the specified time.
+// This is used when retrieving timestamp information from Redis for remote clients.
+func (c *Client) SetLastMessage(t time.Time) {
+	c.lastMessage = t
+}

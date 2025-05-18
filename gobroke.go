@@ -165,6 +165,14 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 	if broke.redis != nil && broke.redis.isClientOnOtherInstance(uuid) {
 		// Create a virtual client reference for cross-instance communication
 		client := clients.New(clients.WithUUID(uuid))
+
+		// Get the client's last message time from Redis
+		lastMsgTime := broke.redis.getClientLastMessageTime(uuid)
+		if !lastMsgTime.IsZero() {
+			// Set the last message time on the virtual client
+			client.SetLastMessage(lastMsgTime)
+		}
+
 		return client, nil
 	}
 
@@ -196,6 +204,14 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 			// Create virtual client references for remote clients
 			for _, clientID := range remoteClientIDs {
 				client := clients.New(clients.WithUUID(clientID))
+
+				// Get the client's last message time from Redis
+				lastMsgTime := broke.redis.getClientLastMessageTime(clientID)
+				if !lastMsgTime.IsZero() {
+					// Set the last message time on the virtual client
+					client.SetLastMessage(lastMsgTime)
+				}
+
 				cl = append(cl, client)
 			}
 		}

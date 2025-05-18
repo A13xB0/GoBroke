@@ -54,6 +54,7 @@ When a client connects to a GoBroke instance with Redis enabled:
 1. The client is registered locally as usual
 2. The client's UUID is also registered in Redis with the instance ID
 3. This registration expires after 24 hours (to prevent stale entries)
+4. The client's last message time is synchronized across all replicas every second
 
 ### Client Discovery
 
@@ -62,8 +63,9 @@ The `GetAllClients` method has been enhanced to return clients from all connecte
 1. It first collects all locally connected clients
 2. If Redis is enabled, it queries Redis for clients registered on other instances
 3. It creates virtual client references for remote clients and includes them in the result
+4. For remote clients, it retrieves their last message time from Redis
 
-This allows you to get a complete view of all clients across your distributed system.
+This allows you to get a complete view of all clients across your distributed system, including when they last sent a message.
 
 ### Message Routing
 
@@ -91,12 +93,22 @@ To test high availability with multiple instances:
 3. Connect clients to different instances
 4. Send messages between clients on different instances
 
+### Last Message Time Synchronization
+
+To ensure all replicas know when a client last sent a message:
+
+1. Each replica updates Redis with the last message time for its local clients every second
+2. When retrieving a client from another replica, the last message time is fetched from Redis
+3. This allows replicas to know when a client was last active, even if the client is connected to a different replica
+4. If a replica goes down, other replicas can still access the client's last activity timestamp
+
 ## Best Practices
 
 1. **Instance IDs**: Use meaningful instance IDs to help with debugging and monitoring
 2. **Error Handling**: Redis errors are logged but don't cause GoBroke to fail, allowing for graceful degradation
 3. **Monitoring**: Consider implementing additional monitoring for Redis connectivity
 4. **Scaling**: For high-volume deployments, consider using Redis Cluster or Redis Sentinel
+5. **Inactivity Detection**: Use the synchronized last message times to detect inactive clients across all replicas
 
 ## Limitations
 
