@@ -13,12 +13,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisConfig holds configuration for Redis connection.
+// RedisConfig holds configuration for Redis integration.
 type RedisConfig struct {
 	Enabled     bool
-	Address     string
-	Password    string
-	DB          int
+	Client      *redis.Client // Optional existing Redis client
 	ChannelName string
 	InstanceID  string // Unique identifier for this GoBroke instance
 }
@@ -61,11 +59,14 @@ func newRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*red
 		config.InstanceID = fmt.Sprintf("gobroke:%d", time.Now().UnixNano())
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     config.Address,
-		Password: config.Password,
-		DB:       config.DB,
-	})
+	var client *redis.Client
+
+	// Use provided client or create a new one
+	if config.Client != nil {
+		client = config.Client
+	} else {
+		return nil, fmt.Errorf("Redis client must be provided")
+	}
 
 	// Test connection
 	if _, err := client.Ping(ctx).Result(); err != nil {

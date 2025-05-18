@@ -14,6 +14,7 @@ import (
 	"github.com/A13xB0/GoBroke/endpoint"
 	"github.com/A13xB0/GoBroke/message"
 	"github.com/A13xB0/GoBroke/types"
+	"github.com/redis/go-redis/v9"
 )
 
 // Simple logic handler for demonstration
@@ -46,6 +47,18 @@ func main() {
 		cancel()
 	}()
 
+	// Create a Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379", // Redis server address
+		Password: "",               // Redis password (if any)
+		DB:       0,                // Redis database number
+	})
+
+	// Test Redis connection
+	if _, err := redisClient.Ping(ctx).Result(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
 	// Create a new GoBroke instance with Redis enabled
 	// Note: Redis is optional, remove WithRedis option to disable it
 	broker, err := GoBroke.New(
@@ -53,9 +66,7 @@ func main() {
 		GoBroke.WithContext(ctx),
 		GoBroke.WithChannelSize(100),
 		GoBroke.WithRedis(GoBroke.RedisConfig{
-			Address:     "localhost:6379", // Redis server address
-			Password:    "",               // Redis password (if any)
-			DB:          0,                // Redis database number
+			Client:      redisClient,
 			ChannelName: "gobroke:messages",
 			InstanceID:  fmt.Sprintf("instance-%d", time.Now().UnixNano()),
 		}),

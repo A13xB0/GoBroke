@@ -17,13 +17,19 @@ When a client is not connected to the current GoBroke instance, the system will 
 Redis integration is optional and can be enabled through the `WithRedis` option when creating a new GoBroke instance:
 
 ```go
+// Create a Redis client
+redisClient := redis.NewClient(&redis.Options{
+    Addr:     "localhost:6379", // Redis server address
+    Password: "",               // Redis password (if any)
+    DB:       0,                // Redis database number
+})
+
+// Create a GoBroke instance with Redis integration
 broker, err := GoBroke.New(
     endpoint.NewStubEndpoint(),
     GoBroke.WithContext(ctx),
     GoBroke.WithRedis(GoBroke.RedisConfig{
-        Address:     "localhost:6379", // Redis server address
-        Password:    "",               // Redis password (if any)
-        DB:          0,                // Redis database number
+        Client:      redisClient,      // Use existing Redis client
         ChannelName: "gobroke:messages", // Channel for inter-instance communication
         InstanceID:  "instance-1",     // Unique identifier for this instance
     }),
@@ -35,9 +41,7 @@ broker, err := GoBroke.New(
 | Option | Description | Default |
 |--------|-------------|---------|
 | Enabled | Whether Redis integration is enabled | false |
-| Address | Redis server address (host:port) | Required |
-| Password | Redis server password | "" (empty) |
-| DB | Redis database number | 0 |
+| Client | Redis client instance | Required |
 | ChannelName | Redis channel for inter-instance communication | "gobroke:messages" |
 | InstanceID | Unique identifier for this GoBroke instance | Auto-generated timestamp |
 
