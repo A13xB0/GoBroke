@@ -253,7 +253,7 @@ func (rc *redisClient) unregisterClientFromRedis(client *clients.Client) error {
 	}
 
 	// Remove client last message time
-	lastMsgKey := fmt.Sprintf("gobroke:client:%s:lastmsg", clientID)
+	lastMsgKey := fmt.Sprintf("gobroke:client_lastmsg:%s", clientID)
 	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
