@@ -181,9 +181,13 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 		cl = append(cl, value)
 	}
 	broke.clientsMutex.RUnlock()
+	lo := false
+	if len(localOnly) != 0 {
+		lo = true
+	}
 
 	// If Redis is enabled, get clients from other instances
-	if broke.redis != nil && !localOnly[0] {
+	if broke.redis != nil && lo {
 		remoteClientIDs, err := broke.redis.getRemoteClientIDs()
 		if err != nil {
 			// Log error but continue with local clients
