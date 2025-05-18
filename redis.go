@@ -371,7 +371,7 @@ func (rc *redisClient) updateClientLastMessageTime(client *clients.Client) {
 	timestamp := lastMsgTime.UnixNano()
 
 	// Store the timestamp in Redis
-	key := fmt.Sprintf("gobroke:client:%s:lastmsg", client.GetUUID())
+	key := fmt.Sprintf("gobroke:client_lastmsg:%s", client.GetUUID())
 	err := rc.client.Set(rc.ctx, key, timestamp, 24*time.Hour).Err()
 	if err != nil {
 		// Log error but continue
@@ -386,7 +386,7 @@ func (rc *redisClient) getClientLastMessageTime(clientID string) time.Time {
 		return time.Time{}
 	}
 
-	key := fmt.Sprintf("gobroke:client:%s:lastmsg", clientID)
+	key := fmt.Sprintf("gobroke:client_lastmsg:%s", clientID)
 	val, err := rc.client.Get(rc.ctx, key).Result()
 
 	if err != nil {
