@@ -3,17 +3,15 @@ package GoBroke
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"reflect"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/A13xB0/GoBroke/clients"
-	"github.com/A13xB0/GoBroke/proto"
 	"github.com/A13xB0/GoBroke/types"
 	"github.com/redis/go-redis/v9"
-	protobuf "google.golang.org/protobuf/proto"
 )
 
 // RedisConfig holds configuration for Redis integration.
@@ -22,6 +20,19 @@ type RedisConfig struct {
 	Client      *redis.Client // Optional existing Redis client
 	ChannelName string
 	InstanceID  string // Unique identifier for this GoBroke instance
+}
+
+// redisMessage represents a message that will be serialized and sent through Redis.
+type redisMessage struct {
+	InstanceID   string   // Source instance ID to prevent message loops
+	MessageUUID  string   // Original message UUID
+	ToClientIDs  []string // Target client UUIDs
+	ToLogic      []types.LogicName
+	FromClientID string // Source client UUID, if applicable
+	FromLogic    types.LogicName
+	MessageRaw   []byte
+	Metadata     map[string]any
+	Tags         map[string]interface{}
 }
 
 // redisClient manages the Redis connection and message handling.
@@ -95,31 +106,31 @@ func (rc *redisClient) subscribe() {
 
 // handleRedisMessage processes a message received from Redis.
 func (rc *redisClient) handleRedisMessage(payload string) {
-	var rm proto.RedisMessage
-	if err := protobuf.Unmarshal([]byte(payload), &rm); err != nil {
+	var rm redisMessage
+	if err := json.Unmarshal([]byte(payload), &rm); err != nil {
 		// Log error and continue
 		fmt.Printf("Error unmarshaling Redis message: %v\n", err)
 		return
 	}
 
 	// Ignore messages from this instance to prevent loops
-	if rm.InstanceId == rc.config.InstanceID {
+	if rm.InstanceID == rc.config.InstanceID {
 		return
 	}
 
-	// Convert RedisMessage back to types.Message
+	// Convert redisMessage back to types.Message
 	message := types.Message{
-		UUID:       rm.MessageUuid,
+		UUID:       rm.MessageUUID,
 		MessageRaw: rm.MessageRaw,
-		ToLogic:    convertToLogicNames(rm.ToLogic),
-		Metadata:   convertMetadata(rm.Metadata),
-		Tags:       convertTags(rm.Tags),
+		ToLogic:    rm.ToLogic,
+		Metadata:   rm.Metadata,
+		Tags:       rm.Tags,
 		State:      types.ACCEPTED,
 	}
 
 	// Set FromClient if applicable
-	if rm.FromClientId != "" {
-		client, err := rc.broke.GetClient(rm.FromClientId)
+	if rm.FromClientID != "" {
+		client, err := rc.broke.GetClient(rm.FromClientID)
 		if err == nil {
 			message.FromClient = client
 		}
@@ -127,11 +138,11 @@ func (rc *redisClient) handleRedisMessage(payload string) {
 
 	// Set FromLogic if applicable
 	if rm.FromLogic != "" {
-		message.FromLogic = types.LogicName(rm.FromLogic)
+		message.FromLogic = rm.FromLogic
 	}
 
 	// Resolve ToClient references
-	for _, clientID := range rm.ToClientIds {
+	for _, clientID := range rm.ToClientIDs {
 		client, err := rc.broke.GetClient(clientID)
 		if err == nil {
 			message.ToClient = append(message.ToClient, client)
@@ -154,213 +165,34 @@ func (rc *redisClient) publishMessage(message types.Message) error {
 		toClientIDs = append(toClientIDs, client.GetUUID())
 	}
 
-	// Convert logic names to strings
-	toLogic := make([]string, len(message.ToLogic))
-	for i, logic := range message.ToLogic {
-		toLogic[i] = string(logic)
-	}
-
 	// Create Redis message
-	rm := &proto.RedisMessage{
-		InstanceId:  rc.config.InstanceID,
-		MessageUuid: message.UUID,
-		ToClientIds: toClientIDs,
-		ToLogic:     toLogic,
+	rm := redisMessage{
+		InstanceID:  rc.config.InstanceID,
+		MessageUUID: message.UUID,
+		ToClientIDs: toClientIDs,
+		ToLogic:     message.ToLogic,
 		MessageRaw:  message.MessageRaw,
-		Metadata:    convertToTypedValueMap(message.Metadata),
-		Tags:        convertTagsToTypedValueMap(message.Tags),
+		Metadata:    message.Metadata,
+		Tags:        message.Tags,
 	}
 
 	// Set client ID if message is from a client
 	if message.FromClient != nil {
-		rm.FromClientId = message.FromClient.GetUUID()
+		rm.FromClientID = message.FromClient.GetUUID()
 	}
 
 	// Set logic name if message is from logic
 	if message.FromLogic != "" {
-		rm.FromLogic = string(message.FromLogic)
+		rm.FromLogic = message.FromLogic
 	}
 
 	// Serialize and publish
-	payload, err := protobuf.Marshal(rm)
+	payload, err := json.Marshal(rm)
 	if err != nil {
 		return fmt.Errorf("error marshaling message for Redis: %w", err)
 	}
 
 	return rc.client.Publish(rc.ctx, rc.config.ChannelName, payload).Err()
-}
-
-// Helper functions for converting between protobuf and types
-
-// convertToLogicNames converts a slice of strings to a slice of LogicName
-func convertToLogicNames(logicNames []string) []types.LogicName {
-	result := make([]types.LogicName, len(logicNames))
-	for i, name := range logicNames {
-		result[i] = types.LogicName(name)
-	}
-	return result
-}
-
-// convertMetadata converts a map of string to *TypedValue to a map of string to any
-func convertMetadata(metadata map[string]*proto.TypedValue) map[string]any {
-	if metadata == nil {
-		return nil
-	}
-	result := make(map[string]any, len(metadata))
-	for k, v := range metadata {
-		result[k] = typedValueToInterface(v)
-	}
-	return result
-}
-
-// convertTags converts a map of string to *TypedValue to a map of string to interface{}
-func convertTags(tags map[string]*proto.TypedValue) map[string]interface{} {
-	if tags == nil {
-		return make(map[string]interface{})
-	}
-	result := make(map[string]interface{}, len(tags))
-	for k, v := range tags {
-		result[k] = typedValueToInterface(v)
-	}
-	return result
-}
-
-// typedValueToInterface converts a TypedValue to its corresponding Go type
-func typedValueToInterface(tv *proto.TypedValue) interface{} {
-	if tv == nil {
-		return nil
-	}
-
-	switch tv.Type {
-	case proto.TypedValue_STRING:
-		return string(tv.Value)
-	case proto.TypedValue_INT:
-		// Parse int64 from string
-		i, _ := strconv.ParseInt(string(tv.Value), 10, 64)
-		return i
-	case proto.TypedValue_FLOAT:
-		// For simplicity, convert to string and parse
-		f, _ := strconv.ParseFloat(string(tv.Value), 64)
-		return f
-	case proto.TypedValue_BOOL:
-		// Boolean is represented as a single byte (0 or 1)
-		if len(tv.Value) > 0 && tv.Value[0] != 0 {
-			return true
-		}
-		return false
-	case proto.TypedValue_BYTES:
-		return tv.Value
-	case proto.TypedValue_NULL:
-		return nil
-	default:
-		// For MAP and ARRAY types, or unknown types, return the raw bytes
-		return tv.Value
-	}
-}
-
-// convertToTypedValueMap converts a map of string to any to a map of string to *TypedValue
-func convertToTypedValueMap(metadata map[string]any) map[string]*proto.TypedValue {
-	if metadata == nil {
-		return nil
-	}
-
-	// Create a copy of the metadata map to avoid concurrent map access issues
-	metadataCopy := make(map[string]any, len(metadata))
-
-	// Use a mutex to safely copy the map
-	var mu sync.Mutex
-	mu.Lock()
-	for k, v := range metadata {
-		metadataCopy[k] = v
-	}
-	mu.Unlock()
-
-	// Process the copy
-	result := make(map[string]*proto.TypedValue, len(metadataCopy))
-	for k, v := range metadataCopy {
-		result[k] = interfaceToTypedValue(v)
-	}
-	return result
-}
-
-// convertTagsToTypedValueMap converts a map of string to interface{} to a map of string to *TypedValue
-func convertTagsToTypedValueMap(tags map[string]interface{}) map[string]*proto.TypedValue {
-	if tags == nil {
-		return nil
-	}
-
-	// Create a copy of the tags map to avoid concurrent map access issues
-	tagsCopy := make(map[string]interface{}, len(tags))
-
-	// Use a mutex to safely copy the map
-	var mu sync.Mutex
-	mu.Lock()
-	for k, v := range tags {
-		tagsCopy[k] = v
-	}
-	mu.Unlock()
-
-	// Process the copy
-	result := make(map[string]*proto.TypedValue, len(tagsCopy))
-	for k, v := range tagsCopy {
-		result[k] = interfaceToTypedValue(v)
-	}
-	return result
-}
-
-// interfaceToTypedValue converts a Go value to a TypedValue
-func interfaceToTypedValue(v interface{}) *proto.TypedValue {
-	if v == nil {
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_NULL,
-			Value: nil,
-		}
-	}
-
-	switch val := v.(type) {
-	case string:
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_STRING,
-			Value: []byte(val),
-		}
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		// Convert any integer type to int64
-		i := reflect.ValueOf(val).Int()
-		// Convert int64 to string
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_INT,
-			Value: []byte(strconv.FormatInt(i, 10)),
-		}
-	case float32, float64:
-		// Convert any float type to float64
-		f := reflect.ValueOf(val).Float()
-		// Convert float to string for simplicity
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_FLOAT,
-			Value: []byte(strconv.FormatFloat(f, 'g', -1, 64)),
-		}
-	case bool:
-		// Boolean is represented as a single byte (0 or 1)
-		b := []byte{0}
-		if val {
-			b[0] = 1
-		}
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_BOOL,
-			Value: b,
-		}
-	case []byte:
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_BYTES,
-			Value: val,
-		}
-	default:
-		// For complex types, convert to string representation
-		return &proto.TypedValue{
-			Type:  proto.TypedValue_STRING,
-			Value: []byte(fmt.Sprintf("%v", val)),
-		}
-	}
 }
 
 // isClientOnOtherInstance checks if a client is available on another instance.
