@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package gobroke;
+
+option go_package = "github.com/A13xB0/GoBroke/proto";
+
+// RedisMessage represents a message that will be serialized and sent through Redis.
+message RedisMessage {
+  string instance_id = 1;    // Source instance ID to prevent message loops
+  string message_uuid = 2;   // Original message UUID
+  repeated string to_client_ids = 3;  // Target client UUIDs
+  repeated string to_logic = 4;       // Target logic names
+  string from_client_id = 5;  // Source client UUID, if applicable
+  string from_logic = 6;      // Source logic name, if applicable
+  bytes message_raw = 7;      // Raw message payload
+  map<string, bytes> metadata = 8;  // Message metadata
+  map<string, bytes> tags = 9;      // Message tags
+}

@@ -3,15 +3,16 @@ package GoBroke
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/A13xB0/GoBroke/clients"
+	"github.com/A13xB0/GoBroke/proto"
 	"github.com/A13xB0/GoBroke/types"
 	"github.com/redis/go-redis/v9"
+	protobuf "google.golang.org/protobuf/proto"
 )
 
 // RedisConfig holds configuration for Redis integration.
@@ -20,19 +21,6 @@ type RedisConfig struct {
 	Client      *redis.Client // Optional existing Redis client
 	ChannelName string
 	InstanceID  string // Unique identifier for this GoBroke instance
-}
-
-// redisMessage represents a message that will be serialized and sent through Redis.
-type redisMessage struct {
-	InstanceID   string   // Source instance ID to prevent message loops
-	MessageUUID  string   // Original message UUID
-	ToClientIDs  []string // Target client UUIDs
-	ToLogic      []types.LogicName
-	FromClientID string // Source client UUID, if applicable
-	FromLogic    types.LogicName
-	MessageRaw   []byte
-	Metadata     map[string]any
-	Tags         map[string]interface{}
 }
 
 // redisClient manages the Redis connection and message handling.
@@ -106,31 +94,31 @@ func (rc *redisClient) subscribe() {
 
 // handleRedisMessage processes a message received from Redis.
 func (rc *redisClient) handleRedisMessage(payload string) {
-	var rm redisMessage
-	if err := json.Unmarshal([]byte(payload), &rm); err != nil {
+	var rm proto.RedisMessage
+	if err := protobuf.Unmarshal([]byte(payload), &rm); err != nil {
 		// Log error and continue
 		fmt.Printf("Error unmarshaling Redis message: %v\n", err)
 		return
 	}
 
 	// Ignore messages from this instance to prevent loops
-	if rm.InstanceID == rc.config.InstanceID {
+	if rm.InstanceId == rc.config.InstanceID {
 		return
 	}
 
-	// Convert redisMessage back to types.Message
+	// Convert RedisMessage back to types.Message
 	message := types.Message{
-		UUID:       rm.MessageUUID,
+		UUID:       rm.MessageUuid,
 		MessageRaw: rm.MessageRaw,
-		ToLogic:    rm.ToLogic,
-		Metadata:   rm.Metadata,
-		Tags:       rm.Tags,
+		ToLogic:    convertToLogicNames(rm.ToLogic),
+		Metadata:   convertMetadata(rm.Metadata),
+		Tags:       convertTags(rm.Tags),
 		State:      types.ACCEPTED,
 	}
 
 	// Set FromClient if applicable
-	if rm.FromClientID != "" {
-		client, err := rc.broke.GetClient(rm.FromClientID)
+	if rm.FromClientId != "" {
+		client, err := rc.broke.GetClient(rm.FromClientId)
 		if err == nil {
 			message.FromClient = client
 		}
@@ -138,11 +126,11 @@ func (rc *redisClient) handleRedisMessage(payload string) {
 
 	// Set FromLogic if applicable
 	if rm.FromLogic != "" {
-		message.FromLogic = rm.FromLogic
+		message.FromLogic = types.LogicName(rm.FromLogic)
 	}
 
 	// Resolve ToClient references
-	for _, clientID := range rm.ToClientIDs {
+	for _, clientID := range rm.ToClientIds {
 		client, err := rc.broke.GetClient(clientID)
 		if err == nil {
 			message.ToClient = append(message.ToClient, client)
@@ -165,34 +153,107 @@ func (rc *redisClient) publishMessage(message types.Message) error {
 		toClientIDs = append(toClientIDs, client.GetUUID())
 	}
 
+	// Convert logic names to strings
+	toLogic := make([]string, len(message.ToLogic))
+	for i, logic := range message.ToLogic {
+		toLogic[i] = string(logic)
+	}
+
 	// Create Redis message
-	rm := redisMessage{
-		InstanceID:  rc.config.InstanceID,
-		MessageUUID: message.UUID,
-		ToClientIDs: toClientIDs,
-		ToLogic:     message.ToLogic,
+	rm := &proto.RedisMessage{
+		InstanceId:  rc.config.InstanceID,
+		MessageUuid: message.UUID,
+		ToClientIds: toClientIDs,
+		ToLogic:     toLogic,
 		MessageRaw:  message.MessageRaw,
-		Metadata:    message.Metadata,
-		Tags:        message.Tags,
+		Metadata:    convertToByteMap(message.Metadata),
+		Tags:        convertTagsToByteMap(message.Tags),
 	}
 
 	// Set client ID if message is from a client
 	if message.FromClient != nil {
-		rm.FromClientID = message.FromClient.GetUUID()
+		rm.FromClientId = message.FromClient.GetUUID()
 	}
 
 	// Set logic name if message is from logic
 	if message.FromLogic != "" {
-		rm.FromLogic = message.FromLogic
+		rm.FromLogic = string(message.FromLogic)
 	}
 
 	// Serialize and publish
-	payload, err := json.Marshal(rm)
+	payload, err := protobuf.Marshal(rm)
 	if err != nil {
 		return fmt.Errorf("error marshaling message for Redis: %w", err)
 	}
 
 	return rc.client.Publish(rc.ctx, rc.config.ChannelName, payload).Err()
+}
+
+// Helper functions for converting between protobuf and types
+
+// convertToLogicNames converts a slice of strings to a slice of LogicName
+func convertToLogicNames(logicNames []string) []types.LogicName {
+	result := make([]types.LogicName, len(logicNames))
+	for i, name := range logicNames {
+		result[i] = types.LogicName(name)
+	}
+	return result
+}
+
+// convertMetadata converts a map of string to []byte to a map of string to any
+func convertMetadata(metadata map[string][]byte) map[string]any {
+	if metadata == nil {
+		return nil
+	}
+	result := make(map[string]any, len(metadata))
+	for k, v := range metadata {
+		// For simplicity, we're treating all values as strings
+		// In a real implementation, you might want to deserialize the bytes based on the type
+		result[k] = string(v)
+	}
+	return result
+}
+
+// convertTags converts a map of string to []byte to a map of string to interface{}
+func convertTags(tags map[string][]byte) map[string]interface{} {
+	if tags == nil {
+		return make(map[string]interface{})
+	}
+	result := make(map[string]interface{}, len(tags))
+	for k, v := range tags {
+		// For simplicity, we're treating all values as strings
+		// In a real implementation, you might want to deserialize the bytes based on the type
+		result[k] = string(v)
+	}
+	return result
+}
+
+// convertToByteMap converts a map of string to any to a map of string to []byte
+func convertToByteMap(metadata map[string]any) map[string][]byte {
+	if metadata == nil {
+		return nil
+	}
+	result := make(map[string][]byte, len(metadata))
+	for k, v := range metadata {
+		// For simplicity, we're converting all values to strings
+		// In a real implementation, you might want to serialize based on the type
+		result[k] = []byte(fmt.Sprintf("%v", v))
+	}
+	return result
+}
+
+// convertTagsToByteMap converts a map of string to interface{} to a map of string to []byte
+func convertTagsToByteMap(tags map[string]interface{}) map[string][]byte {
+	if tags == nil {
+		return nil
+	}
+	result := make(map[string][]byte, len(tags))
+	for k, v := range tags {
+		// For simplicity, we're converting all values to strings
+		// In a real implementation, you might want to serialize based on the type
+		result[k] = []byte(fmt.Sprintf("%v", v))
+	}
+	return result
 }
 
 // isClientOnOtherInstance checks if a client is available on another instance.
