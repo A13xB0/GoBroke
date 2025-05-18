@@ -55,6 +55,8 @@ type Message struct {
 	Tags map[string]interface{}
 
 	SentQuickly bool
+
+	FromRedis bool
 }
 
 // Accept marks the message as accepted for further processing.

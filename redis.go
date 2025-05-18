@@ -126,6 +126,7 @@ func (rc *redisClient) handleRedisMessage(payload string) {
 		Metadata:   rm.Metadata,
 		Tags:       rm.Tags,
 		State:      types.ACCEPTED,
+		FromRedis:  true,
 	}
 
 	// Set FromClient if applicable

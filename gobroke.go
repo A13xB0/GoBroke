@@ -174,7 +174,7 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 // It returns the client instance and nil if found, or nil and an error if not found.
 // If Redis is enabled and the client is not found locally, it checks if the client
 // exists on another instance.
-func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
+func (broke *Broke) GetClient(uuid string, localOnly ...bool) (*clients.Client, error) {
 	// Check local clients first
 	broke.clientsMutex.RLock()
 	if client, ok := broke.clients[uuid]; ok {
@@ -182,9 +182,13 @@ func (broke *Broke) GetClient(uuid string) (*clients.Client, error) {
 		return client, nil
 	}
 	broke.clientsMutex.RUnlock()
+	lo := false
+	if len(localOnly) != 0 {
+		lo = localOnly[0]
+	}
 
 	// If Redis is enabled, check if client exists on another instance
-	if broke.redis != nil && broke.redis.isClientOnOtherInstance(uuid) {
+	if broke.redis != nil && !lo && broke.redis.isClientOnOtherInstance(uuid) {
 		// Create a virtual client reference for cross-instance communication
 		client := clients.New(clients.WithUUID(uuid))
 
@@ -248,6 +252,9 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 // If Redis is enabled and the message is for clients not on this instance,
 // it will be published to Redis for routing to other instances.
 func (broke *Broke) SendMessage(message types.Message) {
+	if message.FromRedis {
+		return
+	}
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
 	}
@@ -299,6 +306,9 @@ func (broke *Broke) SendMessage(message types.Message) {
 // This method should only be used for client-to-client communication as it
 // bypasses logic handlers.
 func (broke *Broke) SendMessageQuickly(message types.Message) {
+	if message.FromRedis {
+		return
+	}
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
 	}
