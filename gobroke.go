@@ -119,33 +119,52 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 }
 
 // RemoveClient removes a client from the GoBroke instance and disconnects them
-// from the endpoint. It returns an error if the client doesn't exist or if
-// the disconnection fails.
+// from the endpoint. It can remove clients from both the local instance and from Redis.
+// If the client is not found locally but exists in Redis, it will be removed from Redis.
 func (broke *Broke) RemoveClient(client *clients.Client) error {
+	clientID := client.GetUUID()
+
+	// Check if client exists locally
 	broke.clientsMutex.RLock()
-	_, ok := broke.clients[client.GetUUID()]
+	_, isLocalClient := broke.clients[clientID]
 	broke.clientsMutex.RUnlock()
-	if !ok {
-		return brokeerrors.ErrorClientDoesNotExist
-	}
-	err := broke.endpoint.Disconnect(client)
-	if err != nil {
-		return errors.Join(brokeerrors.ErrorClientCouldNotBeDisconnected, err)
-	}
 
-	broke.clientsMutex.Lock()
-	delete(broke.clients, client.GetUUID())
-	broke.clientsMutex.Unlock()
-
-	// Unregister client from Redis if enabled
-	if broke.redis != nil {
-		if err := broke.redis.unregisterClientFromRedis(client); err != nil {
-			// Log error but don't fail removal
-			fmt.Printf("Error unregistering client from Redis: %v\n", err)
+	// If client exists locally, remove it locally
+	if isLocalClient {
+		// Disconnect the client from the endpoint
+		err := broke.endpoint.Disconnect(client)
+		if err != nil {
+			return errors.Join(brokeerrors.ErrorClientCouldNotBeDisconnected, err)
 		}
+
+		// Remove from local clients map
+		broke.clientsMutex.Lock()
+		delete(broke.clients, clientID)
+		broke.clientsMutex.Unlock()
+
+		// Unregister client from Redis if enabled
+		if broke.redis != nil {
+			if err := broke.redis.unregisterClientFromRedis(client); err != nil {
+				// Log error but don't fail removal
+				fmt.Printf("Error unregistering client from Redis: %v\n", err)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	// If client doesn't exist locally, check if it exists in Redis
+	if broke.redis != nil && broke.redis.isClientOnOtherInstance(clientID) {
+		// Remove client from Redis
+		if err := broke.redis.unregisterClientFromRedisByID(clientID); err != nil {
+			// Log error but don't fail removal
+			fmt.Printf("Error unregistering remote client from Redis: %v\n", err)
+		}
+		return nil
+	}
+
+	// Client doesn't exist locally or in Redis
+	return brokeerrors.ErrorClientDoesNotExist
 }
 
 // GetClient retrieves a client by their UUID.

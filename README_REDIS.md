@@ -47,7 +47,7 @@ broker, err := GoBroke.New(
 
 ## How It Works
 
-### Client Registration
+### Client Registration and Removal
 
 When a client connects to a GoBroke instance with Redis enabled:
 
@@ -55,6 +55,13 @@ When a client connects to a GoBroke instance with Redis enabled:
 2. The client's UUID is also registered in Redis with the instance ID
 3. This registration expires after 24 hours (to prevent stale entries)
 4. The client's last message time is synchronized across all replicas every second
+
+When a client is removed:
+
+1. If the client is local, it is disconnected from the endpoint and removed from the local registry
+2. The client is also unregistered from Redis, removing both its instance registration and last message time
+3. If the client is not local but exists in Redis (on another replica), it is removed from Redis
+4. This allows for managing clients across all replicas, not just the local one
 
 ### Client Discovery
 

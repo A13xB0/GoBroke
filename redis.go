@@ -244,8 +244,35 @@ func (rc *redisClient) unregisterClientFromRedis(client *clients.Client) error {
 		return nil
 	}
 
-	key := fmt.Sprintf("gobroke:client:%s", client.GetUUID())
-	return rc.client.Del(rc.ctx, key).Err()
+	clientID := client.GetUUID()
+
+	// Remove client registration
+	key := fmt.Sprintf("gobroke:client:%s", clientID)
+	if err := rc.client.Del(rc.ctx, key).Err(); err != nil {
+		return err
+	}
+
+	// Remove client last message time
+	lastMsgKey := fmt.Sprintf("gobroke:client:%s:lastmsg", clientID)
+	return rc.client.Del(rc.ctx, lastMsgKey).Err()
+}
+
+// unregisterClientFromRedisByID removes a client from Redis by its ID.
+// This is used when removing a client that exists on another replica.
+func (rc *redisClient) unregisterClientFromRedisByID(clientID string) error {
+	if !rc.config.Enabled {
+		return nil
+	}
+
+	// Remove client registration
+	key := fmt.Sprintf("gobroke:client:%s", clientID)
+	if err := rc.client.Del(rc.ctx, key).Err(); err != nil {
+		return err
+	}
+
+	// Remove client last message time
+	lastMsgKey := fmt.Sprintf("gobroke:client:%s:lastmsg", clientID)
+	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
 // getRemoteClientIDs returns a list of client IDs that are registered in Redis
