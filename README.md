@@ -2,7 +2,7 @@
 
 GoBroke is a lightweight internal message routing system designed for modular logic processing in Go applications. It provides a clean architecture for handling messages between different components (clients and logic modules) within your project, with optional Redis integration for high availability across multiple instances.  
   
-It must be noted that this project may not be for you... I would highly recommend you look into using Kafka or Redis as an alternative. This is primarily for my own interest and another project I am working on.
+**It must be noted that this project may not be for you... I would highly recommend you look into using Kafka or Redis as an alternative. This is primarily for my own interest and another project I am working on.**
 
 ## Overview
 
@@ -417,8 +417,6 @@ broker, err := GoBroke.New(
 1. Client metadata is not synchronized between instances
 2. Logic handlers run only on the instance that receives the message
 3. Redis becomes a single point of failure unless using Cluster/Sentinel
-
-For a complete example of Redis integration, see [examples/redis/main.go](examples/redis/main.go).
 
 ## Best Practices
 

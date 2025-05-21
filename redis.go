@@ -14,6 +14,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	// Redis key prefixes and patterns
+	redisKeyPrefix        = "gobroke:"
+	redisChannelDefault   = redisKeyPrefix + "messages"
+	redisClientKeyPrefix  = redisKeyPrefix + "client:"
+	redisLastMsgKeyPrefix = redisKeyPrefix + "client_lastmsg:"
+)
+
 // RedisConfig holds configuration for Redis integration.
 type RedisConfig struct {
 	Enabled     bool
@@ -54,11 +62,11 @@ func NewRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*Cli
 
 	// Set default values if not provided
 	if config.ChannelName == "" {
-		config.ChannelName = "gobroke:messages"
+		config.ChannelName = redisChannelDefault
 	}
 
 	if config.InstanceID == "" {
-		config.InstanceID = fmt.Sprintf("gobroke:%d", time.Now().UnixNano())
+		config.InstanceID = fmt.Sprintf("%s%d", redisKeyPrefix, time.Now().UnixNano())
 	}
 
 	var client *redis.Client
@@ -211,7 +219,7 @@ func (rc *Client) IsClientOnOtherInstance(clientID string) bool {
 	rc.mu.RUnlock()
 
 	// Check Redis for client presence
-	key := fmt.Sprintf("gobroke:client:%s", clientID)
+	key := fmt.Sprintf("%s%s", redisClientKeyPrefix, clientID)
 	exists, err := rc.client.Exists(rc.ctx, key).Result()
 	if err != nil {
 		return false
@@ -234,7 +242,7 @@ func (rc *Client) RegisterClientInRedis(client *clients.Client) error {
 		return nil
 	}
 
-	key := fmt.Sprintf("gobroke:client:%s", client.GetUUID())
+	key := fmt.Sprintf("%s%s", redisClientKeyPrefix, client.GetUUID())
 	// Store instance ID with the client
 	return rc.client.Set(rc.ctx, key, rc.config.InstanceID, 24*time.Hour).Err()
 }
@@ -248,13 +256,13 @@ func (rc *Client) UnregisterClientFromRedis(client *clients.Client) error {
 	clientID := client.GetUUID()
 
 	// Remove client registration
-	key := fmt.Sprintf("gobroke:client:%s", clientID)
+	key := fmt.Sprintf("%s%s", redisClientKeyPrefix, clientID)
 	if err := rc.client.Del(rc.ctx, key).Err(); err != nil {
 		return err
 	}
 
 	// Remove client last message time
-	lastMsgKey := fmt.Sprintf("gobroke:client_lastmsg:%s", clientID)
+	lastMsgKey := fmt.Sprintf("%s%s", redisLastMsgKeyPrefix, clientID)
 	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
@@ -266,13 +274,13 @@ func (rc *Client) UnregisterClientFromRedisByID(clientID string) error {
 	}
 
 	// Remove client registration
-	key := fmt.Sprintf("gobroke:client:%s", clientID)
+	key := fmt.Sprintf("%s%s", redisClientKeyPrefix, clientID)
 	if err := rc.client.Del(rc.ctx, key).Err(); err != nil {
 		return err
 	}
 
 	// Remove client last message time
-	lastMsgKey := fmt.Sprintf("gobroke:client_lastmsg:%s", clientID)
+	lastMsgKey := fmt.Sprintf("%s%s", redisLastMsgKeyPrefix, clientID)
 	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
@@ -284,7 +292,7 @@ func (rc *Client) GetRemoteClientIDs() ([]string, error) {
 	}
 
 	// Get all client keys from Redis
-	keys, err := rc.client.Keys(rc.ctx, "gobroke:client:*").Result()
+	keys, err := rc.client.Keys(rc.ctx, redisClientKeyPrefix+"*").Result()
 	if err != nil {
 		return nil, fmt.Errorf("error getting client keys from Redis: %w", err)
 	}
@@ -293,7 +301,7 @@ func (rc *Client) GetRemoteClientIDs() ([]string, error) {
 	clientIDs := make([]string, 0, len(keys))
 	for _, key := range keys {
 		// Extract client ID from key (format: "gobroke:client:{uuid}")
-		clientID := key[len("gobroke:client:"):]
+		clientID := key[len(redisClientKeyPrefix):]
 
 		// Get instance ID for this client
 		instanceID, err := rc.client.Get(rc.ctx, key).Result()
@@ -372,7 +380,7 @@ func (rc *Client) UpdateClientLastMessageTime(client *clients.Client) {
 	timestamp := lastMsgTime.UnixNano()
 
 	// Store the timestamp in Redis
-	key := fmt.Sprintf("gobroke:client_lastmsg:%s", client.GetUUID())
+	key := fmt.Sprintf("%s%s", redisLastMsgKeyPrefix, client.GetUUID())
 	err := rc.client.Set(rc.ctx, key, timestamp, 24*time.Hour).Err()
 	if err != nil {
 		// Log error but continue
@@ -387,7 +395,7 @@ func (rc *Client) GetClientLastMessageTime(clientID string) time.Time {
 		return time.Time{}
 	}
 
-	key := fmt.Sprintf("gobroke:client_lastmsg:%s", clientID)
+	key := fmt.Sprintf("%s%s", redisLastMsgKeyPrefix, clientID)
 	val, err := rc.client.Get(rc.ctx, key).Result()
 
 	if err != nil {
