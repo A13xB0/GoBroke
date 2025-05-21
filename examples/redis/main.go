@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	redis2 "github.com/A13xB0/GoBroke/redis"
 	"log"
 	"os"
 	"os/signal"
@@ -66,7 +65,7 @@ func main() {
 		endpoint.NewStubEndpoint(),
 		GoBroke.WithContext(ctx),
 		GoBroke.WithChannelSize(100),
-		GoBroke.WithRedis(redis2.RedisConfig{
+		GoBroke.WithRedis(GoBroke.RedisConfig{
 			Client:      redisClient,
 			ChannelName: "gobroke:messages",
 			InstanceID:  fmt.Sprintf("instance-%d", time.Now().UnixNano()),

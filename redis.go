@@ -1,11 +1,10 @@
 // Package GoBroke provides Redis integration for high availability message routing.
-package redis
+package GoBroke
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/A13xB0/GoBroke"
 	"strconv"
 	"sync"
 	"time"
@@ -40,7 +39,7 @@ type redisMessage struct {
 type Client struct {
 	client      *redis.Client
 	config      RedisConfig
-	broke       *GoBroke.Broke
+	broke       *Broke
 	ctx         context.Context
 	mu          sync.RWMutex
 	clientCache map[string]bool // Cache of client IDs known to be on other instances
@@ -48,7 +47,7 @@ type Client struct {
 }
 
 // NewRedisClient creates a new Redis client with the provided configuration.
-func NewRedisClient(config RedisConfig, broke *GoBroke.Broke, ctx context.Context) (*Client, error) {
+func NewRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*Client, error) {
 	if !config.Enabled {
 		return nil, nil
 	}

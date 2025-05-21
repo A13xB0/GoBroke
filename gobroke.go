@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	brokeRedis "github.com/A13xB0/GoBroke/redis"
 	"sync"
 
 	"github.com/A13xB0/GoBroke/clients"
@@ -30,7 +29,7 @@ type Broke struct {
 	ctx                context.Context
 	recvMiddlewareFunc []middlewareFunc
 	sendMiddlewareFunc []middlewareFunc
-	redis              *brokeRedis.Client // Redis client for high availability
+	redis              *Client // Redis client for high availability
 }
 
 // New creates a new GoBroke instance with the specified endpoint and optional configuration.
@@ -64,7 +63,7 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 
 	// Initialize Redis client if enabled
 	if o.redis.Enabled {
-		redisClient, err := brokeRedis.NewRedisClient(o.redis, gb, o.ctx)
+		redisClient, err := NewRedisClient(o.redis, gb, o.ctx)
 		if err != nil {
 			return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
 		}
