@@ -53,6 +53,10 @@ type Message struct {
 
 	// Tags is used for middlware to be able to add tags to the message
 	Tags map[string]interface{}
+
+	SentQuickly bool
+
+	FromRedis bool
 }
 
 // Accept marks the message as accepted for further processing.

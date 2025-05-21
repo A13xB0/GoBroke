@@ -1,7 +1,9 @@
 // Package GoBroke provides configuration options for the GoBroke message broker system.
 package GoBroke
 
-import "context"
+import (
+	"context"
+)
 
 // brokeOptsFunc is a function type that modifies brokeOpts.
 // It's used to implement the functional options pattern for broker configuration.
@@ -11,14 +13,19 @@ type brokeOptsFunc func(*brokeOpts)
 type brokeOpts struct {
 	channelSize int             // Size of message channels for queuing
 	ctx         context.Context // Context for cancellation and value propagation
+	redis       RedisConfig     // Redis configuration for high availability
 }
 
 // defaultOpts returns a brokeOpts with default values.
-// By default, it sets a channel size of 100 and uses context.Background().
+// By default, it sets a channel size of 100, uses context.Background(),
+// and disables Redis integration.
 func defaultOpts() brokeOpts {
 	return brokeOpts{
 		channelSize: 100,
 		ctx:         context.Background(),
+		redis: RedisConfig{
+			Enabled: false,
+		},
 	}
 }
 
@@ -35,5 +42,15 @@ func WithChannelSize(size int) brokeOptsFunc {
 func WithContext(ctx context.Context) brokeOptsFunc {
 	return func(opts *brokeOpts) {
 		opts.ctx = ctx
+	}
+}
+
+// WithRedis returns a brokeOptsFunc that enables Redis integration for high availability.
+// This allows messages to be routed between multiple GoBroke instances.
+func WithRedis(config RedisConfig) brokeOptsFunc {
+	return func(opts *brokeOpts) {
+		// Always enable Redis when this option is used
+		config.Enabled = true
+		opts.redis = config
 	}
 }

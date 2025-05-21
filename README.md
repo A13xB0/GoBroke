@@ -1,6 +1,8 @@
 # GoBroke
 
-GoBroke is a lightweight internal message routing system designed for modular logic processing in Go applications. It provides a clean architecture for handling messages between different components (clients and logic modules) within your project.
+GoBroke is a lightweight internal message routing system designed for modular logic processing in Go applications. It provides a clean architecture for handling messages between different components (clients and logic modules) within your project, with optional Redis integration for high availability across multiple instances.  
+  
+**It must be noted that this project may not be for you... I would highly recommend you look into using Kafka or Redis as an alternative. This is primarily for my own interest and another project I am working on.**
 
 ## Overview
 
@@ -9,6 +11,7 @@ GoBroke acts as a message router that:
 - Supports different types of logic processing (Dispatched, Worker, Passive)
 - Allows custom endpoint implementations (HTTP, UDP, TCP, gRPC, etc.)
 - Provides clean separation between message handling and business logic
+- Enables high availability through Redis integration
 
 ## Architecture
 
@@ -20,17 +23,23 @@ GoBroke acts as a message router that:
 4. **Logic**: Interface for implementing business logic modules
 5. **Message**: Structure for passing data between components
 6. **LogicBase**: Base implementation providing common logic functionality
+7. **Redis Integration**: Optional component for enabling high availability across multiple instances
 
 ### Message Flow
 
 ```
 [Client] <-> [Endpoint] <-> [Broke] <-> [Logic Modules]
+                             |
+                        [Redis Layer]
+                             |
+                     [Other GoBroke Instances]
 ```
 
 Messages can flow:
 - From clients to logic modules
 - From logic modules to specific clients
 - From logic modules to all clients (broadcast)
+- Between GoBroke instances via Redis (when enabled)
 
 ## Logic Implementation
 
@@ -187,7 +196,25 @@ func (w *inactivityMonitor) RunLogic(message types.Message) error {
 
 ```go
 ctx := context.Background()
-gb, err := GoBroke.New(yourendpoint, GoBroke.WithContext(ctx))
+
+// Optional: Configure Redis for high availability
+redisClient := redis.NewClient(&redis.Options{
+    Addr:     "localhost:6379",
+    Password: "",
+    DB:       0,
+})
+
+// Create GoBroke instance with optional Redis integration
+gb, err := GoBroke.New(
+    yourendpoint,
+    GoBroke.WithContext(ctx),
+    // Optional: Enable Redis integration
+    GoBroke.WithRedis(GoBroke.RedisConfig{
+        Client:      redisClient,
+        ChannelName: "gobroke:messages",
+        InstanceID:  "instance-1",
+    }),
+)
 if err != nil {
     panic(err)
 }
@@ -324,6 +351,73 @@ gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
 })
 ```
 
+## Redis Integration
+
+GoBroke supports Redis integration for enabling high availability across multiple instances. When enabled, this feature allows:
+
+1. Client discovery across instances
+2. Message routing between instances
+3. High availability for client connections
+4. Last message time synchronization
+
+### Configuration
+
+Redis integration is configured through the `WithRedis` option:
+
+```go
+redisClient := redis.NewClient(&redis.Options{
+    Addr:     "localhost:6379",
+    Password: "",
+    DB:       0,
+})
+
+broker, err := GoBroke.New(
+    endpoint.NewStubEndpoint(),
+    GoBroke.WithContext(ctx),
+    GoBroke.WithRedis(GoBroke.RedisConfig{
+        Client:      redisClient,
+        ChannelName: "gobroke:messages",
+        InstanceID:  "instance-1",
+    }),
+)
+```
+
+### How It Works
+
+1. **Client Registration**:
+   - Clients are registered both locally and in Redis
+   - Registration includes instance ID and last message time
+   - Registrations expire after 24 hours to prevent stale entries
+
+2. **Message Routing**:
+   - Messages are automatically routed to the correct instance
+   - Uses Redis pub/sub for inter-instance communication
+   - Includes loop prevention mechanisms
+
+3. **Client Discovery**:
+   - `GetAllClients` returns clients from all instances
+   - Creates virtual client references for remote clients
+   - Includes last message times from all instances
+
+4. **High Availability**:
+   - Clients can connect to any instance
+   - Messages are automatically routed to the correct instance
+   - Last message times are synchronized across instances
+
+### Best Practices
+
+1. Use meaningful instance IDs for debugging
+2. Implement monitoring for Redis connectivity
+3. Consider Redis Cluster or Sentinel for production
+4. Handle Redis errors gracefully
+5. Monitor client inactivity across instances
+
+### Limitations
+
+1. Client metadata is not synchronized between instances
+2. Logic handlers run only on the instance that receives the message
+3. Redis becomes a single point of failure unless using Cluster/Sentinel
+
 ## Best Practices
 
 1. **Logic Type Selection**:
@@ -345,6 +439,12 @@ gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
    - Extend LogicBase for all logic implementations
    - Use the provided context for cancellation handling
    - Access common functionality through LogicBase methods
+
+5. **High Availability**:
+   - Use Redis integration for production deployments
+   - Configure appropriate Redis timeouts
+   - Monitor Redis connectivity
+   - Implement proper error handling
 
 ## License
 
