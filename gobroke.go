@@ -252,9 +252,6 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 // If Redis is enabled and the message is for clients not on this instance,
 // it will be published to Redis for routing to other instances.
 func (broke *Broke) SendMessage(message types.Message) {
-	if message.FromRedis {
-		return
-	}
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
 	}
@@ -283,7 +280,7 @@ func (broke *Broke) SendMessage(message types.Message) {
 		}
 
 		// If some clients need Redis routing, publish the message
-		if needsRedis {
+		if needsRedis && !message.FromRedis {
 			// Don't wait for Redis publish to complete
 			go func(msg types.Message) {
 				if err := broke.redis.publishMessage(msg); err != nil {
@@ -334,7 +331,7 @@ func (broke *Broke) SendMessageQuickly(message types.Message) {
 		}
 
 		// If some clients need Redis routing, publish the message
-		if needsRedis {
+		if needsRedis && !message.FromRedis {
 			// Don't wait for Redis publish to complete
 			go func(msg types.Message) {
 				if err := broke.redis.publishMessage(msg); err != nil {
