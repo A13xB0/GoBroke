@@ -29,7 +29,7 @@ type Broke struct {
 	ctx                context.Context
 	recvMiddlewareFunc []middlewareFunc
 	sendMiddlewareFunc []middlewareFunc
-	redis              *Client // Redis client for high availability
+	redis              *redisClient // Redis client for high availability
 }
 
 // New creates a new GoBroke instance with the specified endpoint and optional configuration.
