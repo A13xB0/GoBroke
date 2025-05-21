@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	brokeRedis "github.com/A13xB0/GoBroke/redis"
 	"sync"
 
 	"github.com/A13xB0/GoBroke/clients"
@@ -29,7 +30,7 @@ type Broke struct {
 	ctx                context.Context
 	recvMiddlewareFunc []middlewareFunc
 	sendMiddlewareFunc []middlewareFunc
-	redis              *redisClient // Redis client for high availability
+	redis              *brokeRedis.Client // Redis client for high availability
 }
 
 // New creates a new GoBroke instance with the specified endpoint and optional configuration.
@@ -63,7 +64,7 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 
 	// Initialize Redis client if enabled
 	if o.redis.Enabled {
-		redisClient, err := newRedisClient(o.redis, gb, o.ctx)
+		redisClient, err := brokeRedis.NewRedisClient(o.redis, gb, o.ctx)
 		if err != nil {
 			return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
 		}
@@ -111,11 +112,11 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 
 	// Register client in Redis if enabled
 	if broke.redis != nil {
-		if err := broke.redis.registerClientInRedis(client); err != nil {
+		if err := broke.redis.RegisterClientInRedis(client); err != nil {
 			// Log error but don't fail registration
 			fmt.Printf("Error registering client in Redis: %v\n", err)
 		}
-		broke.redis.updateClientLastMessageTime(client)
+		broke.redis.UpdateClientLastMessageTime(client)
 	}
 
 	return nil
@@ -147,7 +148,7 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 
 		// Unregister client from Redis if enabled
 		if broke.redis != nil {
-			if err := broke.redis.unregisterClientFromRedis(client); err != nil {
+			if err := broke.redis.UnregisterClientFromRedis(client); err != nil {
 				// Log error but don't fail removal
 				fmt.Printf("Error unregistering client from Redis: %v\n", err)
 			}
@@ -157,9 +158,9 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 	}
 
 	// If client doesn't exist locally, check if it exists in Redis
-	if broke.redis != nil && broke.redis.isClientOnOtherInstance(clientID) {
+	if broke.redis != nil && broke.redis.IsClientOnOtherInstance(clientID) {
 		// Remove client from Redis
-		if err := broke.redis.unregisterClientFromRedisByID(clientID); err != nil {
+		if err := broke.redis.UnregisterClientFromRedisByID(clientID); err != nil {
 			// Log error but don't fail removal
 			fmt.Printf("Error unregistering remote client from Redis: %v\n", err)
 		}
@@ -188,12 +189,12 @@ func (broke *Broke) GetClient(uuid string, localOnly ...bool) (*clients.Client, 
 	}
 
 	// If Redis is enabled, check if client exists on another instance
-	if broke.redis != nil && !lo && broke.redis.isClientOnOtherInstance(uuid) {
+	if broke.redis != nil && !lo && broke.redis.IsClientOnOtherInstance(uuid) {
 		// Create a virtual client reference for cross-instance communication
 		client := clients.New(clients.WithUUID(uuid))
 
 		// Get the client's last message time from Redis
-		lastMsgTime := broke.redis.getClientLastMessageTime(uuid)
+		lastMsgTime := broke.redis.GetClientLastMessageTime(uuid)
 		if !lastMsgTime.IsZero() {
 			// Set the last message time on the virtual client
 			client.SetLastMessage(lastMsgTime)
@@ -222,7 +223,7 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 
 	// If Redis is enabled, get clients from other instances
 	if broke.redis != nil && !lo {
-		remoteClientIDs, err := broke.redis.getRemoteClientIDs()
+		remoteClientIDs, err := broke.redis.GetRemoteClientIDs()
 		if err != nil {
 			// Log error but continue with local clients
 			fmt.Printf("Error getting remote clients: %v\n", err)
@@ -232,7 +233,7 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 				client := clients.New(clients.WithUUID(clientID))
 
 				// Get the client's last message time from Redis
-				lastMsgTime := broke.redis.getClientLastMessageTime(clientID)
+				lastMsgTime := broke.redis.GetClientLastMessageTime(clientID)
 				if !lastMsgTime.IsZero() {
 					// Set the last message time on the virtual client
 					client.SetLastMessage(lastMsgTime)
@@ -283,7 +284,7 @@ func (broke *Broke) SendMessage(message types.Message) {
 		if needsRedis && !message.FromRedis {
 			// Don't wait for Redis publish to complete
 			go func(msg types.Message) {
-				if err := broke.redis.publishMessage(msg); err != nil {
+				if err := broke.redis.PublishMessage(msg); err != nil {
 					// Log error but continue
 					fmt.Printf("Error publishing message to Redis: %v\n", err)
 				}
@@ -334,7 +335,7 @@ func (broke *Broke) SendMessageQuickly(message types.Message) {
 		if needsRedis && !message.FromRedis {
 			// Don't wait for Redis publish to complete
 			go func(msg types.Message) {
-				if err := broke.redis.publishMessage(msg); err != nil {
+				if err := broke.redis.PublishMessage(msg); err != nil {
 					// Log error but continue
 					fmt.Printf("Error publishing message to Redis: %v\n", err)
 				}
@@ -385,7 +386,7 @@ func (broke *Broke) Start() {
 		case <-broke.ctx.Done():
 			// Close Redis connection if enabled
 			if broke.redis != nil {
-				if err := broke.redis.close(); err != nil {
+				if err := broke.redis.Close(); err != nil {
 					// Log error but continue shutdown
 					fmt.Printf("Error closing Redis connection: %v\n", err)
 				}
@@ -428,7 +429,6 @@ func (broke *Broke) Start() {
 						// Passive logic handlers don't process messages
 					}
 				}
-				// TODO: Consider logging when logic handler is not found
 			}
 		}
 	}

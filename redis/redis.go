@@ -1,10 +1,11 @@
 // Package GoBroke provides Redis integration for high availability message routing.
-package GoBroke
+package redis
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/A13xB0/GoBroke"
 	"strconv"
 	"sync"
 	"time"
@@ -35,19 +36,19 @@ type redisMessage struct {
 	Tags         map[string]interface{}
 }
 
-// redisClient manages the Redis connection and message handling.
-type redisClient struct {
+// Client manages the Redis connection and message handling.
+type Client struct {
 	client      *redis.Client
 	config      RedisConfig
-	broke       *Broke
+	broke       *GoBroke.Broke
 	ctx         context.Context
 	mu          sync.RWMutex
 	clientCache map[string]bool // Cache of client IDs known to be on other instances
 	stopTicker  chan struct{}   // Channel to stop the heartbeat ticker
 }
 
-// newRedisClient creates a new Redis client with the provided configuration.
-func newRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*redisClient, error) {
+// NewRedisClient creates a new Redis client with the provided configuration.
+func NewRedisClient(config RedisConfig, broke *GoBroke.Broke, ctx context.Context) (*Client, error) {
 	if !config.Enabled {
 		return nil, nil
 	}
@@ -75,7 +76,7 @@ func newRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*red
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	rc := &redisClient{
+	rc := &Client{
 		client:      client,
 		config:      config,
 		broke:       broke,
@@ -88,13 +89,13 @@ func newRedisClient(config RedisConfig, broke *Broke, ctx context.Context) (*red
 	go rc.subscribe()
 
 	// Start the client heartbeat ticker to update last message times
-	go rc.startClientHeartbeat()
+	go rc.StartClientHeartbeat()
 
 	return rc, nil
 }
 
 // subscribe listens for messages from other GoBroke instances.
-func (rc *redisClient) subscribe() {
+func (rc *Client) subscribe() {
 	pubsub := rc.client.Subscribe(rc.ctx, rc.config.ChannelName)
 	defer pubsub.Close()
 
@@ -105,7 +106,7 @@ func (rc *redisClient) subscribe() {
 }
 
 // handleRedisMessage processes a message received from Redis.
-func (rc *redisClient) handleRedisMessage(payload string) {
+func (rc *Client) handleRedisMessage(payload string) {
 	var rm redisMessage
 	if err := json.Unmarshal([]byte(payload), &rm); err != nil {
 		// Log error and continue
@@ -154,8 +155,8 @@ func (rc *redisClient) handleRedisMessage(payload string) {
 	rc.broke.SendMessage(message)
 }
 
-// publishMessage sends a message to other GoBroke instances via Redis.
-func (rc *redisClient) publishMessage(message types.Message) error {
+// PublishMessage sends a message to other GoBroke instances via Redis.
+func (rc *Client) PublishMessage(message types.Message) error {
 	if !rc.config.Enabled {
 		return nil
 	}
@@ -196,8 +197,8 @@ func (rc *redisClient) publishMessage(message types.Message) error {
 	return rc.client.Publish(rc.ctx, rc.config.ChannelName, payload).Err()
 }
 
-// isClientOnOtherInstance checks if a client is available on another instance.
-func (rc *redisClient) isClientOnOtherInstance(clientID string) bool {
+// IsClientOnOtherInstance checks if a client is available on another instance.
+func (rc *Client) IsClientOnOtherInstance(clientID string) bool {
 	if !rc.config.Enabled {
 		return false
 	}
@@ -228,8 +229,8 @@ func (rc *redisClient) isClientOnOtherInstance(clientID string) bool {
 	return false
 }
 
-// registerClientInRedis registers a client in Redis for discovery by other instances.
-func (rc *redisClient) registerClientInRedis(client *clients.Client) error {
+// RegisterClientInRedis registers a client in Redis for discovery by other instances.
+func (rc *Client) RegisterClientInRedis(client *clients.Client) error {
 	if !rc.config.Enabled {
 		return nil
 	}
@@ -239,8 +240,8 @@ func (rc *redisClient) registerClientInRedis(client *clients.Client) error {
 	return rc.client.Set(rc.ctx, key, rc.config.InstanceID, 24*time.Hour).Err()
 }
 
-// unregisterClientFromRedis removes a client from Redis when it disconnects.
-func (rc *redisClient) unregisterClientFromRedis(client *clients.Client) error {
+// UnregisterClientFromRedis removes a client from Redis when it disconnects.
+func (rc *Client) UnregisterClientFromRedis(client *clients.Client) error {
 	if !rc.config.Enabled {
 		return nil
 	}
@@ -258,9 +259,9 @@ func (rc *redisClient) unregisterClientFromRedis(client *clients.Client) error {
 	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
-// unregisterClientFromRedisByID removes a client from Redis by its ID.
+// UnregisterClientFromRedisByID removes a client from Redis by its ID.
 // This is used when removing a client that exists on another replica.
-func (rc *redisClient) unregisterClientFromRedisByID(clientID string) error {
+func (rc *Client) UnregisterClientFromRedisByID(clientID string) error {
 	if !rc.config.Enabled {
 		return nil
 	}
@@ -276,9 +277,9 @@ func (rc *redisClient) unregisterClientFromRedisByID(clientID string) error {
 	return rc.client.Del(rc.ctx, lastMsgKey).Err()
 }
 
-// getRemoteClientIDs returns a list of client IDs that are registered in Redis
+// GetRemoteClientIDs returns a list of client IDs that are registered in Redis
 // but not on this instance.
-func (rc *redisClient) getRemoteClientIDs() ([]string, error) {
+func (rc *Client) GetRemoteClientIDs() ([]string, error) {
 	if !rc.config.Enabled {
 		return nil, nil
 	}
@@ -313,8 +314,8 @@ func (rc *redisClient) getRemoteClientIDs() ([]string, error) {
 	return clientIDs, nil
 }
 
-// close closes the Redis client connection and stops the heartbeat ticker.
-func (rc *redisClient) close() error {
+// Close closes the Redis client connection and stops the heartbeat ticker.
+func (rc *Client) Close() error {
 	if !rc.config.Enabled || rc.client == nil {
 		return nil
 	}
@@ -325,8 +326,8 @@ func (rc *redisClient) close() error {
 	return rc.client.Close()
 }
 
-// startClientHeartbeat starts a ticker that updates client last message times in Redis every second.
-func (rc *redisClient) startClientHeartbeat() {
+// StartClientHeartbeat starts a ticker that updates client last message times in Redis every second.
+func (rc *Client) StartClientHeartbeat() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -344,18 +345,18 @@ func (rc *redisClient) startClientHeartbeat() {
 }
 
 // updateAllClientLastMessageTimes updates the last message time in Redis for all local clients.
-func (rc *redisClient) updateAllClientLastMessageTimes() {
+func (rc *Client) updateAllClientLastMessageTimes() {
 	// Get all local clients
 	localClients := rc.broke.GetAllClients(true) // true = local clients only
 
 	for _, client := range localClients {
 		// Update the client's last message time in Redis
-		rc.updateClientLastMessageTime(client)
+		rc.UpdateClientLastMessageTime(client)
 	}
 }
 
 // updateClientLastMessageTime updates the last message time in Redis for a specific client.
-func (rc *redisClient) updateClientLastMessageTime(client *clients.Client) {
+func (rc *Client) UpdateClientLastMessageTime(client *clients.Client) {
 	if !rc.config.Enabled {
 		return
 	}
@@ -380,9 +381,9 @@ func (rc *redisClient) updateClientLastMessageTime(client *clients.Client) {
 	}
 }
 
-// getClientLastMessageTime retrieves the last message time from Redis for a client.
+// GetClientLastMessageTime retrieves the last message time from Redis for a client.
 // Returns a zero time if the client has no recorded last message time.
-func (rc *redisClient) getClientLastMessageTime(clientID string) time.Time {
+func (rc *Client) GetClientLastMessageTime(clientID string) time.Time {
 	if !rc.config.Enabled {
 		return time.Time{}
 	}
