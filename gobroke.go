@@ -246,6 +246,52 @@ func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
 	return cl
 }
 
+// handleRedisRouting processes message routing for Redis-enabled setups.
+// It filters local clients and handles Redis publishing for remote clients.
+// Returns true if the message's ToClient list was modified.
+func (broke *Broke) handleRedisRouting(message *types.Message) bool {
+	if broke.redis == nil || len(message.ToClient) == 0 || message.FromRedis {
+		return false
+	}
+
+	// Filter clients that are not on this instance
+	var localClients []*clients.Client
+	var needsRedis bool
+
+	for _, client := range message.ToClient {
+		// Check if client is local (has a real client object)
+		broke.clientsMutex.RLock()
+		_, isLocal := broke.clients[client.GetUUID()]
+		broke.clientsMutex.RUnlock()
+
+		if isLocal {
+			localClients = append(localClients, client)
+		} else {
+			// This client needs Redis routing
+			needsRedis = true
+		}
+	}
+
+	// If some clients need Redis routing, publish the message
+	if needsRedis {
+		// Don't wait for Redis publish to complete
+		go func(msg types.Message) {
+			if err := broke.redis.PublishMessage(msg); err != nil {
+				// Log error but continue
+				fmt.Printf("Error publishing message to Redis: %v\n", err)
+			}
+		}(*message)
+	}
+
+	// Update message with only local clients if needed
+	if len(localClients) < len(message.ToClient) {
+		message.ToClient = localClients
+		return true
+	}
+
+	return false
+}
+
 // SendMessage queues a message for processing by GoBroke.
 // This method can be used to send messages to both logic handlers and clients.
 // If the message is from a client, their last message timestamp is updated.
@@ -259,43 +305,7 @@ func (broke *Broke) SendMessage(message types.Message) {
 		message.FromClient.SetLastMessageNow()
 	}
 
-	// Check if any target clients need Redis routing
-	if broke.redis != nil && len(message.ToClient) > 0 {
-		// Filter clients that are not on this instance
-		var localClients []*clients.Client
-		var needsRedis bool
-
-		for _, client := range message.ToClient {
-			// Check if client is local (has a real client object)
-			broke.clientsMutex.RLock()
-			_, isLocal := broke.clients[client.GetUUID()]
-			broke.clientsMutex.RUnlock()
-
-			if isLocal {
-				localClients = append(localClients, client)
-			} else {
-				// This client needs Redis routing
-				needsRedis = true
-			}
-		}
-
-		// If some clients need Redis routing, publish the message
-		if needsRedis && !message.FromRedis {
-			// Don't wait for Redis publish to complete
-			go func(msg types.Message) {
-				if err := broke.redis.PublishMessage(msg); err != nil {
-					// Log error but continue
-					fmt.Printf("Error publishing message to Redis: %v\n", err)
-				}
-			}(message)
-		}
-
-		// Update message with only local clients
-		if len(localClients) < len(message.ToClient) {
-			message.ToClient = localClients
-		}
-	}
-
+	broke.handleRedisRouting(&message)
 	broke.receiveQueue <- message
 }
 
@@ -310,42 +320,8 @@ func (broke *Broke) SendMessageQuickly(message types.Message) {
 		message = middleFn(message)
 	}
 	message.SentQuickly = true
-	// Check if any target clients need Redis routing
-	if broke.redis != nil && len(message.ToClient) > 0 {
-		// Filter clients that are not on this instance
-		var localClients []*clients.Client
-		var needsRedis bool
 
-		for _, client := range message.ToClient {
-			// Check if client is local (has a real client object)
-			broke.clientsMutex.RLock()
-			_, isLocal := broke.clients[client.GetUUID()]
-			broke.clientsMutex.RUnlock()
-
-			if isLocal {
-				localClients = append(localClients, client)
-			} else {
-				// This client needs Redis routing
-				needsRedis = true
-			}
-		}
-
-		// If some clients need Redis routing, publish the message
-		if needsRedis && !message.FromRedis {
-			// Don't wait for Redis publish to complete
-			go func(msg types.Message) {
-				if err := broke.redis.PublishMessage(msg); err != nil {
-					// Log error but continue
-					fmt.Printf("Error publishing message to Redis: %v\n", err)
-				}
-			}(message)
-		}
-
-		// Update message with only local clients
-		if len(localClients) < len(message.ToClient) {
-			message.ToClient = localClients
-		}
-	}
+	broke.handleRedisRouting(&message)
 	broke.sendQueue <- message
 }
 
