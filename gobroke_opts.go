@@ -3,6 +3,8 @@ package GoBroke
 
 import (
 	"context"
+
+	"github.com/A13xB0/GoBroke/types"
 )
 
 // brokeOptsFunc is a function type that modifies brokeOpts.
@@ -14,6 +16,8 @@ type brokeOpts struct {
 	channelSize int             // Size of message channels for queuing
 	ctx         context.Context // Context for cancellation and value propagation
 	redis       RedisConfig     // Redis configuration for high availability
+	// OnLogicPanic is called after recovering from a panic in RunLogic (WORKER or DISPATCHED).
+	OnLogicPanic func(logicName types.LogicName, msg types.Message, recovered any, stack string)
 }
 
 // defaultOpts returns a brokeOpts with default values.
@@ -52,5 +56,13 @@ func WithRedis(config RedisConfig) brokeOptsFunc {
 		// Always enable Redis when this option is used
 		config.Enabled = true
 		opts.redis = config
+	}
+}
+
+// WithOnLogicPanic sets a callback invoked when a logic handler panics. The broker always
+// recovers so the process and message loop keep running; use this for structured logging.
+func WithOnLogicPanic(fn func(logicName types.LogicName, msg types.Message, recovered any, stack string)) brokeOptsFunc {
+	return func(opts *brokeOpts) {
+		opts.OnLogicPanic = fn
 	}
 }

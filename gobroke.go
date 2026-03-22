@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"runtime/debug"
 	"sync"
 
 	"github.com/A13xB0/GoBroke/clients"
@@ -30,6 +32,7 @@ type Broke struct {
 	recvMiddlewareFunc []middlewareFunc
 	sendMiddlewareFunc []middlewareFunc
 	redis              *redisClient // Redis client for high availability
+	onLogicPanic       func(types.LogicName, types.Message, any, string)
 }
 
 // New creates a new GoBroke instance with the specified endpoint and optional configuration.
@@ -49,6 +52,7 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 		receiveQueue: make(chan types.Message, o.channelSize),
 		sendQueue:    make(chan types.Message, o.channelSize),
 		ctx:          o.ctx,
+		onLogicPanic: o.OnLogicPanic,
 	}
 	// todo: Handle Errors
 	if endpoint == nil {
@@ -390,16 +394,16 @@ func (broke *Broke) Start() {
 				if logicFn, ok := broke.logic[logicName]; ok {
 					switch logicFn.Type() {
 					case types.WORKER:
-						if err := logicFn.RunLogic(msg); err != nil {
+						if err := broke.runLogicRecover(logicName, msg, logicFn); err != nil {
 							// TODO: Implement error handling strategy
 							continue
 						}
 					case types.DISPATCHED:
-						go func(l types.Logic, m types.Message) {
-							if err := l.RunLogic(m); err != nil {
+						go func(name types.LogicName, l types.Logic, m types.Message) {
+							if err := broke.runLogicRecover(name, m, l); err != nil {
 								// TODO: Implement error handling strategy
 							}
-						}(logicFn, msg)
+						}(logicName, logicFn, msg)
 					case types.PASSIVE:
 						// Passive logic handlers don't process messages
 					}
@@ -407,4 +411,20 @@ func (broke *Broke) Start() {
 			}
 		}
 	}
+}
+
+// runLogicRecover runs l.RunLogic(msg). If RunLogic panics, the panic is recovered,
+// onLogicPanic or stderr is used for logging, and err is nil. Otherwise err is the return value of RunLogic.
+func (broke *Broke) runLogicRecover(logicName types.LogicName, msg types.Message, l types.Logic) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := string(debug.Stack())
+			if broke.onLogicPanic != nil {
+				broke.onLogicPanic(logicName, msg, r, stack)
+			} else {
+				_, _ = fmt.Fprintf(os.Stderr, "logic panic logic=%s recovered=%v\n%s\n", logicName, r, stack)
+			}
+		}
+	}()
+	return l.RunLogic(msg)
 }
