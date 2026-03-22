@@ -446,6 +446,18 @@ broker, err := GoBroke.New(
    - Monitor Redis connectivity
    - Implement proper error handling
 
+## Releasing (module tags)
+
+This module is consumed as `github.com/A13xB0/GoBroke`. After merging changes to `main`:
+
+```bash
+git tag -a v0.X.Y -m "v0.X.Y: summary"
+git push origin main
+git push origin v0.X.Y
+```
+
+Downstream repos should bump `require github.com/A13xB0/GoBroke v0.X.Y` and remove any `replace ... => ../GoBroke` once the tag is visible on GitHub.
+
 ## License
 
 This project is licensed under the terms specified in the LICENSE file.
