@@ -139,3 +139,17 @@ func NewSimpleLogicMessage(From types.LogicName, ToClient *clients.Client, ToLog
 		Tags:       make(map[string]any),
 	}
 }
+
+// Reply builds a message from a logic to one client and no logic: the usual
+// response to a client request. Unlike NewSimpleLogicMessage(from, to, "", raw)
+// it doesn't add an empty logic name to ToLogic.
+func Reply(from types.LogicName, to *clients.Client, raw []byte, opts ...Option) types.Message {
+	return NewLogicMessage(from, []*clients.Client{to}, nil, raw, opts...)
+}
+
+// Notify builds a message from a logic to several clients and no logic, for
+// example a push to every member of a group. msgType becomes FromLogic, which
+// clients use to tell message types apart.
+func Notify(msgType types.LogicName, raw []byte, to ...*clients.Client) types.Message {
+	return NewLogicMessage(msgType, to, nil, raw)
+}
