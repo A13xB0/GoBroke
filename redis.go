@@ -40,7 +40,7 @@ type redisMessage struct {
 	FromLogic    types.LogicName
 	MessageRaw   []byte
 	Metadata     map[string]any
-	Tags         map[string]interface{}
+	Tags         map[string]any
 }
 
 // redisClient manages the Redis connection and message handling.

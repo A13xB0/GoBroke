@@ -44,7 +44,7 @@ func NewClientMessage(From *clients.Client, ToClients []*clients.Client, ToLogic
 		MessageRaw: MessageRaw,
 		Metadata:   o.metadata,
 		UUID:       o.uuid,
-		Tags:       make(map[string]interface{}),
+		Tags:       make(map[string]any),
 	}
 }
 
@@ -73,7 +73,7 @@ func NewSimpleClientMessage(From *clients.Client, ToClient *clients.Client, ToLo
 		MessageRaw: MessageRaw,
 		Metadata:   o.metadata,
 		UUID:       o.uuid,
-		Tags:       make(map[string]interface{}),
+		Tags:       make(map[string]any),
 	}
 }
 
@@ -106,7 +106,7 @@ func NewLogicMessage(From types.LogicName, ToClients []*clients.Client, ToLogic 
 		MessageRaw: MessageRaw,
 		Metadata:   o.metadata,
 		UUID:       o.uuid,
-		Tags:       make(map[string]interface{}),
+		Tags:       make(map[string]any),
 	}
 }
 
@@ -136,6 +136,6 @@ func NewSimpleLogicMessage(From types.LogicName, ToClient *clients.Client, ToLog
 		MessageRaw: MessageRaw,
 		Metadata:   o.metadata,
 		UUID:       o.uuid,
-		Tags:       make(map[string]interface{}),
+		Tags:       make(map[string]any),
 	}
 }

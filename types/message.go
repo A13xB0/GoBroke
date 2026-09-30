@@ -52,7 +52,7 @@ type Message struct {
 	State MessageState
 
 	// Tags is used for middlware to be able to add tags to the message
-	Tags map[string]interface{}
+	Tags map[string]any
 
 	SentQuickly bool
 
@@ -80,7 +80,7 @@ func (m *Message) Reject() {
 // Parameters:
 //   - tag: The key for the tag
 //   - value: The value to associate with the tag
-func (m *Message) AddTag(tag string, value interface{}) {
+func (m *Message) AddTag(tag string, value any) {
 	m.Tags[tag] = value
 }
 
@@ -94,7 +94,7 @@ func (m *Message) AddTag(tag string, value interface{}) {
 // Returns:
 //   - interface{}: The value associated with the tag
 //   - error: ErrorTagDoesNotExist if the tag is not found
-func (m *Message) GetTag(tag string, value interface{}) (interface{}, error) {
+func (m *Message) GetTag(tag string, value any) (any, error) {
 	if value, ok := m.Tags[tag]; ok {
 		return value, nil
 	}
