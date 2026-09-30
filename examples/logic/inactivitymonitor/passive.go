@@ -3,61 +3,60 @@
 package inactivitymonitor
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"time"
 
 	"github.com/A13xB0/GoBroke"
 	"github.com/A13xB0/GoBroke/types"
 )
 
-// This ensures this logic can be addressed from another logic
-const Name types.LogicName = "broadcaster"
+// Name lets other logics refer to this one.
+const Name types.LogicName = "inactivitymonitor"
 
-// inactivityMonitor implements a passive logic handler that periodically checks
-// for and removes inactive clients from the broker.
+// errNotInvocable is returned if a message is ever routed to this logic.
+var errNotInvocable = errors.New("inactivitymonitor receives no messages")
+
+// inactivityMonitor is a PASSIVE logic with a Run loop: it receives no
+// messages, and the broker starts Run in Start and cancels it on shutdown.
 type inactivityMonitor struct {
-	GoBroke.LogicBase     // Embeds base logic functionality
-	inactivityMinutes int // Duration in minutes after which a client is considered inactive
+	GoBroke.LogicBase
+	timeout time.Duration
+	every   time.Duration
 }
 
-// CreateWorker creates a new inactivity monitor instance.
-// Parameters:
-//   - broke: The broker instance to monitor
-//   - inactivityMinutes: The duration in minutes after which a client is considered inactive
-//
-// Returns a types.Logic interface that runs passively in the background.
-func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) types.Logic {
-	worker := inactivityMonitor{
-		LogicBase:         GoBroke.NewLogicBase(Name, types.PASSIVE, broke),
-		inactivityMinutes: inactivityMinutes,
+// Create returns a monitor that removes clients idle for longer than timeout.
+func Create(broke *GoBroke.Broke, timeout time.Duration) types.Logic {
+	return &inactivityMonitor{
+		LogicBase: GoBroke.NewLogicBase(Name, types.PASSIVE, broke),
+		timeout:   timeout,
+		every:     10 * time.Second,
 	}
-	worker.startWorker()
-	return &worker
 }
 
-// startWorker begins the monitoring loop that checks for inactive clients.
-// It runs continuously until the context is cancelled, checking client activity
-// every 10 seconds and removing clients that exceed the inactivity threshold.
-func (w *inactivityMonitor) startWorker() {
+// Run checks for idle clients until ctx is cancelled.
+func (w *inactivityMonitor) Run(ctx context.Context) error {
+	t := time.NewTicker(w.every)
+	defer t.Stop()
 	for {
 		select {
-		case <-w.Ctx.Done():
-		default:
-			time.Sleep(10 * time.Second)
-			clients := w.GetAllClients()
-			for _, client := range clients {
-				delta := time.Since(client.GetLastMessage())
-				if delta.Minutes() > 15 {
-					_ = w.RemoveClient(client)
-				}
-			}
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			w.removeIdle()
 		}
 	}
 }
 
-// RunLogic implements the types.Logic interface.
-// Since this is a passive monitor, it does not process messages and returns an error
-// if invoked directly. All monitoring is handled by the background worker.
-func (w *inactivityMonitor) RunLogic(message types.Message) error {
-	return fmt.Errorf("this logic does not support invocation")
+func (w *inactivityMonitor) removeIdle() {
+	for _, c := range w.GetAllClients() {
+		if time.Since(c.GetLastMessage()) > w.timeout {
+			_ = w.RemoveClient(c)
+		}
+	}
+}
+
+// RunLogic is never called for a PASSIVE logic.
+func (w *inactivityMonitor) RunLogic(types.Message) error {
+	return errNotInvocable
 }

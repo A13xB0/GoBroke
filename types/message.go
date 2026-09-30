@@ -48,12 +48,15 @@ type Message struct {
 	// UUID uniquely identifies this message instance
 	UUID string
 
-	// State is used for middleware to reject or accept a message
+	// State is used by middleware to reject or accept a message.
+	// A REJECTED message is dropped by the broker.
 	State MessageState
 
 	// Tags is used for middlware to be able to add tags to the message
 	Tags map[string]any
 
+	// SentQuickly marks a message sent with SendMessageQuickly or Deliver:
+	// it goes to clients only and is never handed to logic.
 	SentQuickly bool
 }
 
@@ -79,6 +82,9 @@ func (m *Message) Reject() {
 //   - tag: The key for the tag
 //   - value: The value to associate with the tag
 func (m *Message) AddTag(tag string, value any) {
+	if m.Tags == nil {
+		m.Tags = make(map[string]any)
+	}
 	m.Tags[tag] = value
 }
 
@@ -87,12 +93,12 @@ func (m *Message) AddTag(tag string, value any) {
 //
 // Parameters:
 //   - tag: The key for the tag to retrieve
-//   - value: Placeholder parameter (unused)
+//   - _: Unused; kept for source compatibility
 //
 // Returns:
-//   - interface{}: The value associated with the tag
+//   - any: The value associated with the tag
 //   - error: ErrorTagDoesNotExist if the tag is not found
-func (m *Message) GetTag(tag string, value any) (any, error) {
+func (m *Message) GetTag(tag string, _ any) (any, error) {
 	if value, ok := m.Tags[tag]; ok {
 		return value, nil
 	}

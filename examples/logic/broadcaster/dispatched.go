@@ -1,4 +1,5 @@
 // Package broadcaster provides example implementations of logic handlers for broadcasting messages.
+// It shows the same job as a DISPATCHED logic and as a WORKER logic.
 package broadcaster
 
 import (
@@ -6,36 +7,28 @@ import (
 	"github.com/A13xB0/GoBroke/types"
 )
 
-const Name types.LogicName = "broadcaster"
+// DispatchedName is the logic name of the DISPATCHED broadcaster.
+const DispatchedName types.LogicName = "broadcaster.dispatched"
 
-// broadcasterDispatched implements a dispatched-type logic handler that broadcasts messages
-// to all connected clients concurrently. Each message broadcast runs in its own goroutine.
+// broadcasterDispatched broadcasts each message on its own goroutine, so
+// several broadcasts may run at once and finish in any order.
 type broadcasterDispatched struct {
-	GoBroke.LogicBase // Embeds base logic functionality
+	GoBroke.LogicBase
 }
 
-// CreateDispatched creates a new broadcaster dispatched instance.
-// It initializes the handler with the provided broker and returns it as a types.Logic interface.
-// This implementation processes each message in a separate goroutine.
+// CreateDispatched creates a DISPATCHED broadcaster.
 func CreateDispatched(broke *GoBroke.Broke) types.Logic {
-	worker := broadcasterDispatched{
-		LogicBase: GoBroke.NewLogicBase(Name, types.DISPATCHED, broke),
+	return &broadcasterDispatched{
+		LogicBase: GoBroke.NewLogicBase(DispatchedName, types.DISPATCHED, broke),
 	}
-
-	return &worker
 }
 
-// RunLogic implements the types.Logic interface.
-// It immediately broadcasts the received message to all connected clients.
-// Since this is a dispatched handler, this method is called in its own goroutine
-// for each message, allowing concurrent message broadcasting.
+// RunLogic sends the message to every connected client.
 func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
-	clients := w.GetAllClients()
-	sMsg := types.Message{
-		ToClient:   clients,
+	w.SendMessageQuickly(types.Message{
+		ToClient:   w.GetAllClients(),
 		FromLogic:  w.Name(),
 		MessageRaw: msg.MessageRaw,
-	}
-	w.SendMessage(sMsg)
+	})
 	return nil
 }

@@ -22,6 +22,7 @@ GoBroke acts as a message router that:
 4. **Logic**: Interface for implementing business logic modules
 5. **Message**: Structure for passing data between components
 6. **LogicBase**: Base implementation providing common logic functionality
+7. **Lanes**: Per-WORKER (or per-queue, per-key) sequential runners
 
 ### Message Flow
 
@@ -40,10 +41,10 @@ All logic modules in GoBroke extend the `LogicBase` struct, which provides commo
 
 ```go
 type LogicBase struct {
-    name      string
-    logicType types.LogicType
-    Ctx       context.Context
-    *Broke
+    // Ctx is cancelled when the broker shuts down.
+    Ctx context.Context
+    *Broke // SendMessage, SendMessageQuickly, Deliver, Tick, GetClient, ...
+    // name, type and scheduling options are unexported
 }
 ```
 
@@ -66,162 +67,112 @@ func CreateCustomLogic(broke *GoBroke.Broke) types.Logic {
 
 ## Logic Types
 
-GoBroke supports three types of logic modules:
+Every logic declares how it runs when it is created, with
+`GoBroke.NewLogicBase(name, type, broke, options...)`. The type tells a reader
+how that code is scheduled; the broker guarantees it.
 
-### 1. DISPATCHED Logic
+| Type | Receives messages | Runs | Use for |
+|---|---|---|---|
+| `DISPATCHED` | yes | each message on its own goroutine | independent requests: logins, lookups, replies |
+| `WORKER` | yes | one message at a time, in arrival order, on its own lane | state that must change in order: movement, a market, a guild |
+| `PASSIVE` | no | only its optional `Run` loop | clocks, simulation ticks, housekeeping |
 
-- Processes messages immediately in a new goroutine
-- Best for quick, non-blocking operations
-- Suitable for broadcasting or simple transformations
-- Example: Message broadcaster
+There is no central routing goroutine. A busy logic of one type never delays
+another logic.
+
+### DISPATCHED
 
 ```go
-type broadcasterDispatched struct {
-    GoBroke.LogicBase
+type ping struct{ GoBroke.LogicBase }
+
+func CreatePing(b *GoBroke.Broke) types.Logic {
+    return &ping{GoBroke.NewLogicBase("session.Ping", types.DISPATCHED, b)}
 }
 
-func CreateDispatched(broke *GoBroke.Broke) types.Logic {
-    worker := broadcasterDispatched{
-        LogicBase: GoBroke.NewLogicBase("broadcaster", types.DISPATCHED, broke),
-    }
-    return &worker
-}
-
-func (w *broadcasterDispatched) RunLogic(msg types.Message) error {
-    clients := w.GetAllClients()
-    sMsg := types.Message{
-        ToClient:   clients,
-        FromLogic:  w,
-        MessageRaw: msg.MessageRaw,
-    }
-    w.SendMessage(sMsg)
-    return nil
+func (p *ping) RunLogic(m types.Message) error {
+    return p.Deliver(message.NewSimpleLogicMessage(p.Name(), m.FromClient, "", pong))
 }
 ```
 
-### 2. WORKER Logic
+`MaxConcurrent(n)` caps how many run at once for client traffic; further
+client messages wait at the edge (see Backpressure).
 
-- Processes messages in a dedicated worker goroutine
-- Maintains its own message queue
-- Best for sequential processing or rate-limited operations
-- Example: Sequential message processor
+### WORKER
+
+A WORKER gets its own lane, so `RunLogic` runs one message at a time in the
+order they arrived, without holding up anything else. It never needs to start
+goroutines of its own.
+
+Two options set what a WORKER is sequential *with*:
 
 ```go
-type broadcasterWorker struct {
-    GoBroke.LogicBase
-    receive chan types.Message
-}
+// Several logics that change the same state share one lane:
+// every market packet runs one at a time, in order.
+GoBroke.NewLogicBase("market.buy", types.WORKER, b, GoBroke.InQueue("market"))
+GoBroke.NewLogicBase("market.consign", types.WORKER, b, GoBroke.InQueue("market"))
 
-func CreateWorker(broke *GoBroke.Broke, ctx context.Context) types.Logic {
-    worker := broadcasterWorker{
-        LogicBase: GoBroke.NewLogicBase("broadcaster", types.WORKER, broke),
-        receive:   make(chan types.Message),
-    }
-    worker.startWorker()
-    return &worker
-}
+// One queue split into lanes by key: each map runs in order, maps run in parallel.
+byMap := func(m types.Message) string { return mapOf(m.FromClient) }
+GoBroke.NewLogicBase("walk", types.WORKER, b, GoBroke.InQueue("world"), GoBroke.KeyedBy(byMap, 64))
+GoBroke.NewLogicBase("attack", types.WORKER, b, GoBroke.InQueue("world"), GoBroke.KeyedBy(byMap, 64))
+```
 
-func (w *broadcasterWorker) startWorker() {
+Keys that hash to the same lane share it, which costs parallelism but never
+ordering. Every logic in a keyed queue must use the same shard count.
+
+### PASSIVE and background loops
+
+A PASSIVE logic receives no messages. Any logic may implement `Runner`; the
+broker starts `Run` in `Start` and cancels its context on shutdown.
+
+```go
+type auctionClock struct{ GoBroke.LogicBase }
+
+func (c *auctionClock) RunLogic(types.Message) error { return nil }
+
+func (c *auctionClock) Run(ctx context.Context) error {
+    t := time.NewTicker(10 * time.Minute)
+    defer t.Stop()
     for {
         select {
-        case <-w.Ctx.Done():
-            return
-        case msg := <-w.receive:
-            w.work(msg)
+        case <-ctx.Done():
+            return nil
+        case <-t.C:
+            c.Tick("market.expire") // runs in the market lane, in order with buys
         }
     }
 }
-
-func (w *broadcasterWorker) RunLogic(message types.Message) error {
-    w.receive <- message
-    return nil
-}
 ```
 
-### 3. PASSIVE Logic
-
-- Runs independently of message flow
-- Never receives messages directly
-- Best for background tasks or monitoring
-- Example: Inactivity monitor
-
-```go
-type inactivityMonitor struct {
-    GoBroke.LogicBase
-    inactivityMinutes int
-}
-
-func CreateWorker(broke *GoBroke.Broke, inactivityMinutes int) types.Logic {
-    worker := inactivityMonitor{
-        LogicBase:         GoBroke.NewLogicBase("inactivitymonitor", types.PASSIVE, broke),
-        inactivityMinutes: inactivityMinutes,
-    }
-    worker.startWorker()
-    return &worker
-}
-
-func (w *inactivityMonitor) startWorker() {
-    for {
-        select {
-        case <-w.Ctx.Done():
-            return
-        default:
-            time.Sleep(10 * time.Second)
-            clients := w.GetAllClients()
-            for _, client := range clients {
-                delta := time.Now().Sub(client.GetLastMessage())
-                if delta.Minutes() > float64(w.inactivityMinutes) {
-                    _ = w.RemoveClient(client)
-                }
-            }
-        }
-    }
-}
-
-func (w *inactivityMonitor) RunLogic(message types.Message) error {
-    return fmt.Errorf("this logic does not support invocation")
-}
-```
+A clock owns time, not state: it hands time-driven work to the WORKER that owns
+the state with `Tick(name)` (every lane) or `TickFor(name, key)` (one key). A
+tick is skipped if one is already waiting, so a slow lane never builds a
+backlog. The WORKER recognises a tick with `GoBroke.TickKey(m)`.
 
 ## Getting Started
 
-1. Create a new GoBroke instance:
+1. Create a broker. If the endpoint implements `GoBroke.Binder`, `New` calls
+   `Bind(broker)` so the endpoint has the broker without being patched later:
 
 ```go
-ctx := context.Background()
-
-gb, err := GoBroke.New(
-    yourendpoint,
+gb, err := GoBroke.New(yourEndpoint,
     GoBroke.WithContext(ctx),
+    GoBroke.WithLogger(slog.Default()),
 )
 if err != nil {
-    panic(err)
+    return err
 }
 ```
 
-2. Implement your logic modules:
+2. Add logic:
 
 ```go
-// Create and add logic modules
-broadcasterLogic := broadcaster.CreateDispatched(gb)
-_ = gb.AddLogic(broadcasterLogic)
-
-inactivityMonitor := inactivitymonitor.CreateWorker(gb, 15)
-_ = gb.AddLogic(inactivityMonitor)
+_ = gb.AddLogic(broadcaster.CreateDispatched(gb))
+_ = gb.AddLogic(inactivitymonitor.Create(gb, 15*time.Minute))
 ```
 
-3. Implement an endpoint:
-
-```go
-// Implement the endpoint.Endpoint interface
-type Endpoint interface {
-    Sender(chan types.Message) error
-    Receiver(chan types.Message) error
-    Disconnect(*clients.Client) error
-}
-```
-
-4. Start the router:
+3. Start. `Start` blocks until the context ends; when it returns every lane and
+   `Run` loop has stopped:
 
 ```go
 gb.Start()
@@ -229,33 +180,32 @@ gb.Start()
 
 ## Custom Endpoints
 
-To implement a custom endpoint:
+An endpoint implements `endpoint.Endpoint`:
 
-1. Create a struct that implements the `endpoint.Endpoint` interface
-2. Implement the required methods:
-   - `Sender`: Handle outgoing messages
-   - `Receiver`: Handle incoming messages
-   - `Disconnect`: Handle client disconnection
+- `Sender(ch)`: the broker's outbound channel. Read it until the broker's
+  context ends; the broker never closes it.
+- `Receiver(ch)`: a legacy inbound channel. Prefer calling `Receive`.
+- `Disconnect(client)`: close the client's connection.
+- `Start(ctx)`: the broker runs it on its own goroutine; it may block or return.
 
-Example WebSocket endpoint structure:
-```go
-type WSEndpoint struct {
-    upgrader websocket.Upgrader
-    clients  map[string]*websocket.Conn
-}
+Feed client messages in with `broker.Receive(ctx, msg)` from each
+connection's own goroutine. It applies receive middleware and routes the
+message, and it returns `ErrorMessageRejected` if middleware rejected it.
 
-func (e *WSEndpoint) Sender(ch chan types.Message) error {
-    // Implement message sending logic
-}
+### Backpressure
 
-func (e *WSEndpoint) Receiver(ch chan types.Message) error {
-    // Implement message receiving logic
-}
+Pushing to a WORKER lane never blocks, so a logic may message its own lane.
+Limits apply only to client traffic: when a lane holds `WithLaneLimit` messages
+(default 1024), `Receive` waits for space. Only the calling connection waits;
+with a transport that reads frames on demand, that also slows the client down.
 
-func (e *WSEndpoint) Disconnect(client *clients.Client) error {
-    // Implement client disconnection logic
-}
-```
+### Shutdown
+
+Cancel the broker's context. `SendMessage` becomes a no-op, `Deliver` returns
+`ErrorBrokerNotRunning`, every `LogicBase.Ctx` is cancelled, lanes stop
+(messages still queued are dropped and counted in a debug log) and `Start`
+returns once lanes and `Run` loops have exited. No channel is closed, so late
+senders never panic.
 
 ## Message Structure
 
@@ -319,6 +269,12 @@ gb.AttachSendMiddleware(func(msg types.Message) types.Message {
 })
 ```
 
+Receive middleware runs for every routed message, from clients and from
+logic. Send middleware runs in `SendMessage`, `SendMessageQuickly` and
+`Deliver`. A middleware that calls `msg.Reject()` stops the chain and the
+message is dropped; `Receive` and `Deliver` then return `ErrorMessageRejected`.
+Middleware can be attached at any time.
+
 Example middleware for message filtering:
 ```go
 gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
@@ -330,28 +286,22 @@ gb.AttachReceiveMiddleware(func(msg types.Message) types.Message {
 })
 ```
 
-## Best Practices
+## Choosing a type
 
-1. **Logic Type Selection**:
-   - Use DISPATCHED for simple, non-blocking operations
-   - Use WORKER for sequential or rate-limited processing
-   - Use PASSIVE for background tasks and monitoring
+Ask three questions for each handler:
 
-2. **Context Usage**:
-   - Use the context provided by LogicBase for cancellation
-   - Add timeouts where appropriate
-   - Handle context cancellation in worker loops
+1. **Does it change state that another handler also changes?** If not
+   (stateless, read-only, or the database enforces it), it is `DISPATCHED`.
+2. **If it does, it is a `WORKER` in the queue that owns that state.** Key the
+   queue by the smallest thing that must stay consistent: a map, a guild, a
+   mailbox.
+3. **Is it triggered by time rather than a message?** Then it is `PASSIVE` with
+   `Run`. If it changes state, it `Tick`s the owning queue rather than touching
+   the state itself.
 
-3. **Message Processing**:
-   - Keep message processing logic concise
-   - Use appropriate goroutines for concurrent processing
-   - Consider message ordering requirements when choosing logic types
-
-4. **LogicBase Usage**:
-   - Extend LogicBase for all logic implementations
-   - Use the provided context for cancellation handling
-   - Access common functionality through LogicBase methods
-
+A handler never reaches into another queue's state. When an action spans two
+(say, taking gold from a player and putting it in a guild bank) it does its
+half and sends a message to the queue that owns the other half.
 
 ## Releasing (module tags)
 
