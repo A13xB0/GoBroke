@@ -32,7 +32,7 @@ import (
 //   - Unique identifier (auto-generated or provided via options)
 //   - Empty tags map for custom message tagging
 //   - Optional metadata (if provided via options)
-func NewClientMessage(From *clients.Client, ToClients []*clients.Client, ToLogic []types.LogicName, MessageRaw []byte, opts ...messageOptsFunc) types.Message {
+func NewClientMessage(From *clients.Client, ToClients []*clients.Client, ToLogic []types.LogicName, MessageRaw []byte, opts ...Option) types.Message {
 	o := defaultOpts()
 	for _, fn := range opts {
 		fn(&o)
@@ -61,7 +61,7 @@ func NewClientMessage(From *clients.Client, ToClients []*clients.Client, ToLogic
 //
 // This function is equivalent to calling NewClientMessage with single-element slices,
 // but provides a more ergonomic API for the common case of single-recipient messages.
-func NewSimpleClientMessage(From *clients.Client, ToClient *clients.Client, ToLogic types.LogicName, MessageRaw []byte, opts ...messageOptsFunc) types.Message {
+func NewSimpleClientMessage(From *clients.Client, ToClient *clients.Client, ToLogic types.LogicName, MessageRaw []byte, opts ...Option) types.Message {
 	o := defaultOpts()
 	for _, fn := range opts {
 		fn(&o)
@@ -94,7 +94,7 @@ func NewSimpleClientMessage(From *clients.Client, ToClient *clients.Client, ToLo
 //   - Unique identifier (auto-generated or provided via options)
 //   - Empty tags map for custom message tagging
 //   - Optional metadata (if provided via options)
-func NewLogicMessage(From types.LogicName, ToClients []*clients.Client, ToLogic []types.LogicName, MessageRaw []byte, opts ...messageOptsFunc) types.Message {
+func NewLogicMessage(From types.LogicName, ToClients []*clients.Client, ToLogic []types.LogicName, MessageRaw []byte, opts ...Option) types.Message {
 	o := defaultOpts()
 	for _, fn := range opts {
 		fn(&o)
@@ -124,7 +124,7 @@ func NewLogicMessage(From types.LogicName, ToClients []*clients.Client, ToLogic 
 // This function is equivalent to calling NewLogicMessage with single-element slices,
 // but provides a more ergonomic API for the common case of single-recipient messages.
 // It's particularly useful for implementing request-response patterns between logic handlers.
-func NewSimpleLogicMessage(From types.LogicName, ToClient *clients.Client, ToLogic types.LogicName, MessageRaw []byte, opts ...messageOptsFunc) types.Message {
+func NewSimpleLogicMessage(From types.LogicName, ToClient *clients.Client, ToLogic types.LogicName, MessageRaw []byte, opts ...Option) types.Message {
 	o := defaultOpts()
 	for _, fn := range opts {
 		fn(&o)

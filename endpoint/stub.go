@@ -51,7 +51,8 @@ func (s *StubEndpoint) Disconnect(client *clients.Client) error {
 }
 
 // Start implements the Endpoint interface. In this stub implementation,
-// it simply waits for context cancellation.
+// it simply waits for context cancellation. The broker runs Start on its own
+// goroutine, so an endpoint may block here or return immediately.
 func (s *StubEndpoint) Start(ctx context.Context) {
 	<-ctx.Done()
 }
@@ -74,6 +75,7 @@ func (s *StubEndpoint) SimulateClientMessage(from *clients.Client, to []*clients
 			FromClient: from,
 			ToClient:   to,
 			MessageRaw: message,
+			Tags:       make(map[string]any),
 		}
 	}
 }

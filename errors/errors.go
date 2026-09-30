@@ -43,3 +43,15 @@ var (
 	// Error tag does not exist
 	ErrorTagDoesNotExist = errors.New("tag does not exist")
 )
+
+// Routing errors
+var (
+	// ErrorMessageRejected is returned by Receive when receive middleware rejects a message.
+	ErrorMessageRejected = errors.New("message rejected by middleware")
+
+	// ErrorQueueConflict indicates two logics declared the same queue with different shard counts.
+	ErrorQueueConflict = errors.New("queue already declared with a different shard count")
+
+	// ErrorBrokerNotRunning indicates a message was sent after the broker's context ended.
+	ErrorBrokerNotRunning = errors.New("broker is not running")
+)
