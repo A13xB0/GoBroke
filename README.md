@@ -246,6 +246,26 @@ message.AddTag("priority", "high")
 value, err := message.GetTag("priority", nil)
 ```
 
+For tags you use in several places, declare a typed key once. `Get` reports
+a missing tag or a wrong type with `ok == false` instead of panicking:
+
+```go
+var UserID = types.NewKey[string]("userid")
+
+UserID.Set(&msg, "42")          // in middleware
+id, ok := UserID.Get(msg)       // in logic
+```
+
+### Building replies
+
+```go
+// to the sender only; FromLogic tells the client what kind of message it is
+p.Deliver(message.Reply(p.Name(), msg.FromClient, raw))
+
+// the same message to many clients
+p.Deliver(message.Notify("group.Disbanded", raw, members...))
+```
+
 ## Middleware
 
 GoBroke supports middleware functions for both receiving and sending messages. Middleware can modify messages, add tags, or control message flow through accept/reject states.
