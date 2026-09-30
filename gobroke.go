@@ -31,7 +31,6 @@ type Broke struct {
 	ctx                context.Context
 	recvMiddlewareFunc []middlewareFunc
 	sendMiddlewareFunc []middlewareFunc
-	redis              *redisClient // Redis client for high availability
 	onLogicPanic       func(types.LogicName, types.Message, any, string)
 }
 
@@ -63,15 +62,6 @@ func New(endpoint endpoint.Endpoint, opts ...brokeOptsFunc) (*Broke, error) {
 	}
 	if err := endpoint.Receiver(gb.receiveQueue); err != nil {
 		return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
-	}
-
-	// Initialize Redis client if enabled
-	if o.redis.Enabled {
-		redisClient, err := newRedisClient(o.redis, gb, o.ctx)
-		if err != nil {
-			return nil, errors.Join(brokeerrors.ErrorCouldNotCreateServer, err)
-		}
-		gb.redis = redisClient
 	}
 
 	return gb, nil
@@ -113,21 +103,11 @@ func (broke *Broke) RegisterClient(client *clients.Client) error {
 
 	client.SetLastMessageNow()
 
-	// Register client in Redis if enabled
-	if broke.redis != nil {
-		if err := broke.redis.registerClientInRedis(client); err != nil {
-			// Log error but don't fail registration
-			fmt.Printf("Error registering client in Redis: %v\n", err)
-		}
-		broke.redis.updateClientLastMessageTime(client)
-	}
-
 	return nil
 }
 
 // RemoveClient removes a client from the GoBroke instance and disconnects them
-// from the endpoint. It can remove clients from both the local instance and from Redis.
-// If the client is not found locally but exists in Redis, it will be removed from Redis.
+// from the endpoint.
 func (broke *Broke) RemoveClient(client *clients.Client) error {
 	clientID := client.GetUUID()
 
@@ -149,158 +129,43 @@ func (broke *Broke) RemoveClient(client *clients.Client) error {
 		delete(broke.clients, clientID)
 		broke.clientsMutex.Unlock()
 
-		// Unregister client from Redis if enabled
-		if broke.redis != nil {
-			if err := broke.redis.unregisterClientFromRedis(client); err != nil {
-				// Log error but don't fail removal
-				fmt.Printf("Error unregistering client from Redis: %v\n", err)
-			}
-		}
-
 		return nil
 	}
 
-	// If client doesn't exist locally, check if it exists in Redis
-	if broke.redis != nil && broke.redis.isClientOnOtherInstance(clientID) {
-		// Remove client from Redis
-		if err := broke.redis.unregisterClientFromRedisByID(clientID); err != nil {
-			// Log error but don't fail removal
-			fmt.Printf("Error unregistering remote client from Redis: %v\n", err)
-		}
-		return nil
-	}
-
-	// Client doesn't exist locally or in Redis
 	return brokeerrors.ErrorClientDoesNotExist
 }
 
 // GetClient retrieves a client by their UUID.
 // It returns the client instance and nil if found, or nil and an error if not found.
-// If Redis is enabled and the client is not found locally, it checks if the client
-// exists on another instance.
+//
+// The localOnly parameter is ignored (Redis support was removed); it is kept for source compatibility.
 func (broke *Broke) GetClient(uuid string, localOnly ...bool) (*clients.Client, error) {
-	// Check local clients first
+	_ = localOnly
 	broke.clientsMutex.RLock()
+	defer broke.clientsMutex.RUnlock()
 	if client, ok := broke.clients[uuid]; ok {
-		broke.clientsMutex.RUnlock()
 		return client, nil
 	}
-	broke.clientsMutex.RUnlock()
-	lo := false
-	if len(localOnly) != 0 {
-		lo = localOnly[0]
-	}
-
-	// If Redis is enabled, check if client exists on another instance
-	if broke.redis != nil && !lo && broke.redis.isClientOnOtherInstance(uuid) {
-		// Create a virtual client reference for cross-instance communication
-		client := clients.New(clients.WithUUID(uuid))
-
-		// Get the client's last message time from Redis
-		lastMsgTime := broke.redis.getClientLastMessageTime(uuid)
-		if !lastMsgTime.IsZero() {
-			// Set the last message time on the virtual client
-			client.SetLastMessage(lastMsgTime)
-		}
-
-		return client, nil
-	}
-
 	return nil, brokeerrors.ErrorClientDoesNotExist
 }
 
 // GetAllClients returns a slice containing all currently connected clients.
-// If Redis is enabled, it also includes clients connected to other instances.
+//
+// The localOnly parameter is ignored (Redis support was removed); it is kept for source compatibility.
 func (broke *Broke) GetAllClients(localOnly ...bool) []*clients.Client {
-	// Get local clients
+	_ = localOnly
 	broke.clientsMutex.RLock()
-	var cl []*clients.Client
+	defer broke.clientsMutex.RUnlock()
+	cl := make([]*clients.Client, 0, len(broke.clients))
 	for _, value := range broke.clients {
 		cl = append(cl, value)
 	}
-	broke.clientsMutex.RUnlock()
-	lo := false
-	if len(localOnly) != 0 {
-		lo = localOnly[0]
-	}
-
-	// If Redis is enabled, get clients from other instances
-	if broke.redis != nil && !lo {
-		remoteClientIDs, err := broke.redis.getRemoteClientIDs()
-		if err != nil {
-			// Log error but continue with local clients
-			fmt.Printf("Error getting remote clients: %v\n", err)
-		} else {
-			// Create virtual client references for remote clients
-			for _, clientID := range remoteClientIDs {
-				client := clients.New(clients.WithUUID(clientID))
-
-				// Get the client's last message time from Redis
-				lastMsgTime := broke.redis.getClientLastMessageTime(clientID)
-				if !lastMsgTime.IsZero() {
-					// Set the last message time on the virtual client
-					client.SetLastMessage(lastMsgTime)
-				}
-
-				cl = append(cl, client)
-			}
-		}
-	}
-
 	return cl
-}
-
-// handleRedisRouting processes message routing for Redis-enabled setups.
-// It filters local clients and handles Redis publishing for remote clients.
-// Returns true if the message's ToClient list was modified.
-func (broke *Broke) handleRedisRouting(message *types.Message) bool {
-	if broke.redis == nil || len(message.ToClient) == 0 || message.FromRedis {
-		return false
-	}
-
-	// Filter clients that are not on this instance
-	var localClients []*clients.Client
-	var needsRedis bool
-
-	for _, client := range message.ToClient {
-		// Check if client is local (has a real client object)
-		broke.clientsMutex.RLock()
-		_, isLocal := broke.clients[client.GetUUID()]
-		broke.clientsMutex.RUnlock()
-
-		if isLocal {
-			localClients = append(localClients, client)
-		} else {
-			// This client needs Redis routing
-			needsRedis = true
-		}
-	}
-
-	// If some clients need Redis routing, publish the message
-	if needsRedis {
-		// Don't wait for Redis publish to complete
-		go func(msg types.Message) {
-			if err := broke.redis.publishMessage(msg); err != nil {
-				// Log error but continue
-				fmt.Printf("Error publishing message to Redis: %v\n", err)
-			}
-		}(*message)
-	}
-
-	// Update message with only local clients if needed
-	if len(localClients) < len(message.ToClient) {
-		message.ToClient = localClients
-		return true
-	}
-
-	return false
 }
 
 // SendMessage queues a message for processing by GoBroke.
 // This method can be used to send messages to both logic handlers and clients.
 // If the message is from a client, their last message timestamp is updated.
-// If Redis is enabled and the message is for clients not on this instance,
-// it will be published to Redis for routing to other instances.
 func (broke *Broke) SendMessage(message types.Message) {
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
@@ -309,7 +174,6 @@ func (broke *Broke) SendMessage(message types.Message) {
 		message.FromClient.SetLastMessageNow()
 	}
 
-	broke.handleRedisRouting(&message)
 	broke.receiveQueue <- message
 }
 
@@ -317,15 +181,11 @@ func (broke *Broke) SendMessage(message types.Message) {
 // This method should only be used for client-to-client communication as it
 // bypasses logic handlers.
 func (broke *Broke) SendMessageQuickly(message types.Message) {
-	if message.FromRedis {
-		return
-	}
 	for _, middleFn := range broke.sendMiddlewareFunc {
 		message = middleFn(message)
 	}
 	message.SentQuickly = true
 
-	broke.handleRedisRouting(&message)
 	broke.sendQueue <- message
 }
 
@@ -363,13 +223,6 @@ func (broke *Broke) Start() {
 	for {
 		select {
 		case <-broke.ctx.Done():
-			// close Redis connection if enabled
-			if broke.redis != nil {
-				if err := broke.redis.close(); err != nil {
-					// Log error but continue shutdown
-					fmt.Printf("Error closing Redis connection: %v\n", err)
-				}
-			}
 			close(broke.receiveQueue)
 			close(broke.sendQueue)
 			return
