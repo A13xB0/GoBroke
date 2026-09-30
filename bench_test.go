@@ -173,6 +173,7 @@ func BenchmarkHeadOfLine(b *testing.B) {
 	// Old router: the busy WORKER blocks the loop; drain before cancel so no send races a closed queue.
 	go func() {
 		for range lat {
+			// Drain late samples so the ping logic never blocks.
 		}
 	}()
 	time.Sleep(50 * time.Millisecond)
